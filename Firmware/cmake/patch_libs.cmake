@@ -37,6 +37,26 @@ function(apply_lib_patches EXTERNAL_DIR)
         message(FATAL_ERROR "Failed to apply BTStack HIDS reports patch: ${BTSTACK_HIDS_REPORTS_ERROR}")
     endif ()
 
+    # BTstack v1.8 queues the HID Control Point command through the GATT query
+    # scheduler even though the operation is a write without response. This can
+    # leave Xbox BLE controllers connected but unable to complete initialization.
+    set(BTSTACK_HIDS_CONTROL_POINT_PATCH "${EXTERNAL_DIR}/patches/btstack_hids_control_point.diff")
+    message(STATUS "Applying BTStack HIDS Control Point patch: ${BTSTACK_HIDS_CONTROL_POINT_PATCH}")
+    execute_process(
+        COMMAND git apply --ignore-whitespace ${BTSTACK_HIDS_CONTROL_POINT_PATCH}
+        WORKING_DIRECTORY ${BTSTACK_PATH}
+        RESULT_VARIABLE BTSTACK_HIDS_CONTROL_POINT_RESULT
+        OUTPUT_VARIABLE BTSTACK_HIDS_CONTROL_POINT_OUTPUT
+        ERROR_VARIABLE BTSTACK_HIDS_CONTROL_POINT_ERROR
+    )
+    if (BTSTACK_HIDS_CONTROL_POINT_RESULT EQUAL 0)
+        message(STATUS "BTStack HIDS Control Point patch applied successfully.")
+    elseif (BTSTACK_HIDS_CONTROL_POINT_ERROR MATCHES "patch does not apply")
+        message(STATUS "BTStack HIDS Control Point patch already applied.")
+    else ()
+        message(FATAL_ERROR "Failed to apply BTStack HIDS Control Point patch: ${BTSTACK_HIDS_CONTROL_POINT_ERROR}")
+    endif ()
+
     set(BLUEPAD32_PATCH "${EXTERNAL_DIR}/patches/bluepad32_uni.diff")
     set(BLUEPAD32_PATH "${EXTERNAL_DIR}/bluepad32")
 
@@ -94,6 +114,28 @@ function(apply_lib_patches EXTERNAL_DIR)
             message(STATUS "Pico SDK HIDS host patch already applied.")
         else ()
             message(FATAL_ERROR "Failed to apply Pico SDK HIDS host patch: ${PICO_SDK_HIDS_PATCH_ERROR}")
+        endif ()
+    endif ()
+
+    # Pico SDK 2.1.0 places incoming HCI packets too close to the start of the
+    # receive buffer for BTstack's configured pre-buffer. Keep the full
+    # pre-buffer available so longer Xbox BLE GATT events are not corrupted.
+    set(PICO_SDK_CYW43_HCI_PREBUFFER_PATCH "${EXTERNAL_DIR}/patches/pico_sdk_cyw43_hci_prebuffer.diff")
+    if (EXISTS "${PICO_SDK_PATH_LOCAL}/src/rp2_common/pico_cyw43_driver/btstack_hci_transport_cyw43.c")
+        message(STATUS "Applying Pico SDK CYW43 HCI pre-buffer patch: ${PICO_SDK_CYW43_HCI_PREBUFFER_PATCH}")
+        execute_process(
+            COMMAND git apply --ignore-whitespace ${PICO_SDK_CYW43_HCI_PREBUFFER_PATCH}
+            WORKING_DIRECTORY ${PICO_SDK_PATH_LOCAL}
+            RESULT_VARIABLE PICO_SDK_CYW43_HCI_PREBUFFER_RESULT
+            OUTPUT_VARIABLE PICO_SDK_CYW43_HCI_PREBUFFER_OUTPUT
+            ERROR_VARIABLE PICO_SDK_CYW43_HCI_PREBUFFER_ERROR
+        )
+        if (PICO_SDK_CYW43_HCI_PREBUFFER_RESULT EQUAL 0)
+            message(STATUS "Pico SDK CYW43 HCI pre-buffer patch applied successfully.")
+        elseif (PICO_SDK_CYW43_HCI_PREBUFFER_ERROR MATCHES "patch does not apply")
+            message(STATUS "Pico SDK CYW43 HCI pre-buffer patch already applied.")
+        else ()
+            message(FATAL_ERROR "Failed to apply Pico SDK CYW43 HCI pre-buffer patch: ${PICO_SDK_CYW43_HCI_PREBUFFER_ERROR}")
         endif ()
     endif ()
 
