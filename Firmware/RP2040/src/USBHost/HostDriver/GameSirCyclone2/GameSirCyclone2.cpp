@@ -494,6 +494,7 @@ void GameSirCyclone2Host::initialize(Gamepad& gamepad, uint8_t address, uint8_t 
     }
 
     GameSirCyclone2Trace::log_unified_banner(vid, pid, nullptr, true, "XINPUT");
+    GameSirCyclone2Trace::note_cyclone_xinput_seen();
     OGXM_LOG("Standard XInput: WORKING\n");
     OGXM_LOG("Dedicated driver: GAMESIR CYCLONE 2\n");
     OGXM_LOG("Enhanced heartbeat: %s\n", heartbeat_enabled_ ? "ACTIVE" : "NOT STARTED");

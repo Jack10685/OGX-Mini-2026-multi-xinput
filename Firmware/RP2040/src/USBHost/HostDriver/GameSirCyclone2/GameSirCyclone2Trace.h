@@ -56,6 +56,9 @@ uint32_t cable_attach_ms();
  */
 bool cyclone_session_active();
 
+/** Mark sticky Cyclone XInput session (wired green mode). Call from dedicated host init. */
+void note_cyclone_xinput_seen();
+
 /** Claim Switch NS personality only when cyclone_session_active() and 057E:2009. */
 bool should_own_switch_ns(uint16_t vid, uint16_t pid);
 

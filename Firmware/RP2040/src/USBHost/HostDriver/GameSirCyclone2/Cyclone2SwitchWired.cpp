@@ -65,6 +65,25 @@ void apply_cyclone2_xbox_face_layout(Gamepad& gamepad, const SwitchPro::InReport
     }
 
     gamepad.overwrite_latest_pad_in(gp);
+
+#if defined(CONFIG_OGXM_DEBUG)
+    static uint16_t s_prev_face = 0xFFFF;
+    static int16_t s_prev_lx = 0x7FFF;
+    static int16_t s_prev_ly = 0x7FFF;
+    const uint16_t face = static_cast<uint16_t>(gp.buttons & kFaceMask);
+    if (face != s_prev_face || gp.joystick_lx != s_prev_lx || gp.joystick_ly != s_prev_ly) {
+        s_prev_face = face;
+        s_prev_lx = gp.joystick_lx;
+        s_prev_ly = gp.joystick_ly;
+        OGXM_LOG("[1 RAW] report=0x30 face_raw=0x%02X\n", original_face);
+        OGXM_LOG("[2 DRIVER] physical_driver=GAMESIR_CYCLONE2 mode=SWITCH\n");
+        OGXM_LOG("[3 DECODED] A=%u B=%u X=%u Y=%u LX=%d LY=%d\n",
+                 switch_a ? 1u : 0u, switch_b ? 1u : 0u, switch_x ? 1u : 0u, switch_y ? 1u : 0u,
+                 static_cast<int>(gp.joystick_lx), static_cast<int>(gp.joystick_ly));
+        OGXM_LOG("[4 OGX INPUT] buttons=0x%04X lx=%d ly=%d\n",
+                 gp.buttons, static_cast<int>(gp.joystick_lx), static_cast<int>(gp.joystick_ly));
+    }
+#endif
 }
 
 } // namespace

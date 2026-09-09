@@ -173,6 +173,15 @@ bool cyclone_session_active()
     return saw_cyclone_xinput_;
 }
 
+void note_cyclone_xinput_seen()
+{
+    if (!saw_cyclone_xinput_) {
+        saw_cyclone_xinput_ = true;
+        cyclone_xinput_seen_ms_ = to_ms_since_boot(get_absolute_time());
+        OGXM_LOG("[CYCLONE2] session affinity: XInput personality armed (sticky for NS/DS4)\n");
+    }
+}
+
 bool should_own_switch_ns(uint16_t vid, uint16_t pid)
 {
     return saw_cyclone_xinput_ && vid == kNintendoVid && pid == 0x2009;
@@ -185,6 +194,9 @@ bool looks_like_cyclone_switch_ns(uint8_t address, uint16_t vid, uint16_t pid)
     }
     tusb_desc_device_t desc{};
     if (tuh_descriptor_get_device_sync(address, &desc, sizeof(desc)) != XFER_RESULT_SUCCESS) {
+        OGXM_LOG("[CYCLONE2] NS fingerprint: device descriptor sync FAILED addr=%u "
+                 "(session=%s)\n",
+                 static_cast<unsigned>(address), saw_cyclone_xinput_ ? "YES" : "NO");
         return false;
     }
     const uint16_t bcd = tu_le16toh(desc.bcdDevice);
@@ -199,12 +211,13 @@ bool looks_like_cyclone_switch_ns(uint8_t address, uint16_t vid, uint16_t pid)
                  "(claim dedicated driver; not SwitchProHost)\n",
                  static_cast<unsigned>(address), product, bcd);
         /* Sticky session so DS4/Switch remounts stay Cyclone-owned. */
-        if (!saw_cyclone_xinput_) {
-            saw_cyclone_xinput_ = true;
-            cyclone_xinput_seen_ms_ = to_ms_since_boot(get_absolute_time());
-        }
+        note_cyclone_xinput_seen();
         return true;
     }
+    OGXM_LOG("[CYCLONE2] NS fingerprint miss addr=%u product=\"%s\" bcd=%04X "
+             "session=%s → leave SWITCH_PRO\n",
+             static_cast<unsigned>(address), product, bcd,
+             saw_cyclone_xinput_ ? "YES" : "NO");
     return false;
 }
 
@@ -585,6 +598,7 @@ const char* mode_name(Mode) { return "UNKNOWN"; }
 const char* led_expected(Mode) { return "?"; }
 uint32_t cable_attach_ms() { return 0; }
 bool cyclone_session_active() { return false; }
+void note_cyclone_xinput_seen() {}
 bool should_own_switch_ns(uint16_t, uint16_t) { return false; }
 bool looks_like_cyclone_switch_ns(uint8_t, uint16_t, uint16_t) { return false; }
 bool should_own_ds4(uint16_t, uint16_t) { return false; }
