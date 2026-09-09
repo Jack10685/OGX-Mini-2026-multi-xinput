@@ -28,7 +28,6 @@ static std::atomic<bool> s_bt_any_connected_cached{false};
 #include "Board/ogxm_log.h"
 #include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtProbe.h"
 #include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBt.h"
-#include "USBHost/HostDriver/GameSirCyclone2/Cyclone2BtProbe.h"
 #include "parser/uni_hid_parser_ds5.h"
 #include "controller/uni_controller.h"
 #include "parser/uni_hid_parser_wii.h"
@@ -411,7 +410,6 @@ static uni_error_t device_discovered_cb(bd_addr_t addr, const char* name, uint16
     }
 
     flydigi_apex4_bt_on_discovered(addr, name, cod, rssi);
-    gamesir_cyclone2_bt_on_discovered(addr, name, cod, rssi);
     return UNI_ERROR_SUCCESS;
 }
 
@@ -420,7 +418,6 @@ static void device_connected_cb(uni_hid_device_t* device) {
         return;
     }
     flydigi_apex4_bt_on_connected(device);
-    gamesir_cyclone2_bt_on_connected(device);
     if (uni_hid_parser_switch2_is_ble_device(device)) {
         OGXM_LOG("SW2: connected pid=0x%04x — waiting for encryption/GATT\n", device->product_id);
     }
@@ -638,7 +635,6 @@ static void device_disconnected_cb(uni_hid_device_t* device) {
         OGXM_LOG("SW2: disconnected slot %d\n", idx);
     }
     flydigi_apex4_bt_on_disconnected(device);
-    gamesir_cyclone2_bt_on_disconnected(device);
 
     const bool was_ready = s_bt_slot_was_ready[idx];
     s_bt_slot_was_ready[idx] = false;
@@ -728,7 +724,6 @@ static uni_error_t device_ready_cb(uni_hid_device_t* device) {
     bt_devices_[idx].connected = true;
     s_bt_slot_was_ready[idx] = true;
     flydigi_apex4_bt_on_ready(device);
-    gamesir_cyclone2_bt_on_ready(device);
 #if defined(CONFIG_OGXM_DEBUG)
     if (uni_hid_parser_switch2_is_ble_device(device)) {
         OGXM_LOG("SW2: READY slot %d pid=0x%04x out=%d — input active\n", idx, device->product_id, out_idx);
@@ -1168,37 +1163,14 @@ void set_pico_w_pio_usb_mux_tick(void (*tick_cb)(void)) {
     s_pico_w_pio_usb_mux_tick = tick_cb;
 }
 
-void wired_usb_quiet_bt_scans() {
-    uni_bt_enable_new_connections_safe(false);
-}
 
 void wired_usb_takeover_disconnect_bt() {
 #if defined(CONFIG_TARGET_PICO_W) && defined(CONFIG_EN_USB_HOST)
     /* Core0 mux uses this atomic; disconnect callbacks run async on Core1. Clear immediately so
-     * we do not treat BT as active during the disconnect window. */
+     * we do not treat BT as active and tuh_deinit() wired USB during the disconnect window. */
     s_bt_any_connected_cached.store(false, std::memory_order_release);
 #endif
-    static const bd_addr_t zero_addr = {0, 0, 0, 0, 0, 0};
     for (uint8_t i = 0; i < CONFIG_BLUEPAD32_MAX_DEVICES; ++i) {
-        uni_hid_device_t* d = uni_hid_device_get_instance_for_idx(static_cast<int>(i));
-        const bool empty =
-            !d ||
-            (bd_addr_cmp(d->conn.btaddr, zero_addr) == 0 &&
-             (d->conn.handle == UNI_BT_CONN_HANDLE_INVALID || d->conn.handle == 0) &&
-             !d->conn.connected &&
-             !bt_devices_[i].connected);
-        if (empty) {
-#if defined(CONFIG_OGXM_DEBUG)
-            /* Bluepad BT device table — NOT OGX USB InputSlot ownership. */
-            printf("[BT SLOT %u] empty — USB takeover skip (not an OGX USB input slot)\n",
-                   static_cast<unsigned>(i));
-#endif
-            continue;
-        }
-#if defined(CONFIG_OGXM_DEBUG)
-        printf("[BT SLOT %u] transport=BT cleanup=disconnect addr=%s handle=0x%04x\n",
-               static_cast<unsigned>(i), bd_addr_to_str(d->conn.btaddr), d->conn.handle);
-#endif
         uni_bt_disconnect_device_safe(i);
     }
     uni_bt_enable_new_connections_safe(false);

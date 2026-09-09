@@ -5,8 +5,6 @@
 #include "tusb.h"
 #include "USBDevice/DeviceDriver/XInput/tud_xinput/tud_xinput.h"
 #include "USBDevice/DeviceDriver/XInput/XInput.h"
-#include "Board/ogxm_log.h"
-#include "sdkconfig.h"
 
 extern "C" {
 #include "xsm3.h"
@@ -148,25 +146,6 @@ void XInputDevice::process(const uint8_t idx, Gamepad& gamepad)
 
 	// send_report() only transmits when endpoint is free; otherwise we keep latest in_report_ for get_report_cb
 	tud_xinput::send_report((uint8_t*)&in_report_, sizeof(XInput::InReport));
-
-#if defined(CONFIG_OGXM_DEBUG)
-	{
-		static uint32_t s_xinput_tx_log_ms = 0;
-		const uint32_t now = to_ms_since_boot(get_absolute_time());
-		const bool active = (in_report_.buttons[0] | in_report_.buttons[1]) != 0 ||
-		                    in_report_.trigger_l != 0 || in_report_.trigger_r != 0 ||
-		                    in_report_.joystick_lx != 0 || in_report_.joystick_ly != 0 ||
-		                    in_report_.joystick_rx != 0 || in_report_.joystick_ry != 0;
-		if (active && now - s_xinput_tx_log_ms >= 500u) {
-			s_xinput_tx_log_ms = now;
-			OGXM_LOG("[5] XINPUT TX idx=%u b0=0x%02x b1=0x%02x lx=%d ly=%d rx=%d ry=%d lt=%u rt=%u\n",
-			         static_cast<unsigned>(idx), in_report_.buttons[0], in_report_.buttons[1],
-			         static_cast<int>(in_report_.joystick_lx), static_cast<int>(in_report_.joystick_ly),
-			         static_cast<int>(in_report_.joystick_rx), static_cast<int>(in_report_.joystick_ry),
-			         static_cast<unsigned>(in_report_.trigger_l), static_cast<unsigned>(in_report_.trigger_r));
-		}
-	}
-#endif
 
     if (tud_xinput::receive_report(reinterpret_cast<uint8_t*>(&out_report_), sizeof(XInput::OutReport)) &&
         out_report_.report_id == XInput::OutReportID::RUMBLE)

@@ -5,7 +5,6 @@
 #include <pico/multicore.h>
 #include <pico/time.h>
 #include <atomic>
-#include <hardware/gpio.h>
 
 #include "tusb.h"
 #include "bsp/board_api.h"
@@ -111,15 +110,9 @@ void core1_task() {
     HostManager& host_manager = HostManager::get_instance();
     host_manager.initialize(_gamepads);
 
-    // Pico-PIO-USB will not reliably detect a hot plug on some boards.
-    // Monitor line state (IRQ + direct GPIO sample) and init host after connection,
-    // including controllers already plugged in before firmware started.
-    while (!board_api::usb::host_connected()) {
-        const bool line = (gpio_get(PIO_USB_DP_PIN) != 0) || (gpio_get(PIO_USB_DP_PIN + 1) != 0);
-        if (line) {
-            board_api_usbh::store_host_line_connected(true);
-            break;
-        }
+    //Pico-PIO-USB will not reliably detect a hot plug on some boards,
+    //monitor and init host stack after connection
+    while(!board_api::usb::host_connected()) {
         sleep_ms(100);
     }
 
@@ -225,11 +218,6 @@ void standard::run() {
         host_manager.initialize(_gamepads);
 
         while (!board_api::usb::host_connected()) {
-            const bool line = (gpio_get(PIO_USB_DP_PIN) != 0) || (gpio_get(PIO_USB_DP_PIN + 1) != 0);
-            if (line) {
-                board_api_usbh::store_host_line_connected(true);
-                break;
-            }
             TaskQueue::Core0::process_tasks();
             sleep_ms(100);
         }

@@ -50,7 +50,6 @@ set(SOURCES_BOARD
     ${SRC}/TaskQueue/TaskQueue.cpp
 
     ${SRC}/Input/InputSlot.cpp
-    ${SRC}/Input/HidRxDebug.cpp
 
     ${SRC}/Board/ogxm_log.cpp
     ${SRC}/Board/esp32_api.cpp
@@ -307,7 +306,6 @@ if(EN_USB_HOST)
     add_compile_definitions(CONFIG_EN_USB_HOST=1)
     list(APPEND SOURCES_BOARD
         ${SRC}/USBHost/tuh_callbacks.cpp
-        ${SRC}/USBHost/UsbHostLifecycle.cpp
         # HID
         ${SRC}/USBHost/HostDriver/DInput/DInput.cpp
         ${SRC}/USBHost/HostDriver/PSClassic/PSClassic.cpp
@@ -325,7 +323,6 @@ if(EN_USB_HOST)
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2SwitchWired.cpp
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2Ds4Wired.cpp
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2HidPassive.cpp
-        ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2BtProbe.cpp
 
         ${SRC}/USBHost/HIDParser/HIDJoystick.cpp
         ${SRC}/USBHost/HIDParser/HIDReportDescriptor.cpp
