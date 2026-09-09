@@ -284,6 +284,44 @@ public:
             pad_in_queue_[pad_in_tail_] = pad_in;
             pad_in_tail_ = (pad_in_tail_ + 1) % PAD_IN_QUEUE_SIZE;
         }
+        last_pad_in_ = pad_in;
+        new_pad_in_.store(true);
+        mutex_exit(&pad_in_mutex_);
+    }
+
+    /** Non-consuming copy of the most recently written PadIn (queue newest or last_). */
+    inline PadIn peek_latest_pad_in()
+    {
+        mutex_enter_blocking(&pad_in_mutex_);
+        PadIn pad_in;
+        if (pad_in_count_ > 0) {
+            const uint8_t idx =
+                static_cast<uint8_t>((pad_in_tail_ + PAD_IN_QUEUE_SIZE - 1) % PAD_IN_QUEUE_SIZE);
+            pad_in = pad_in_queue_[idx];
+        } else {
+            pad_in = last_pad_in_;
+        }
+        mutex_exit(&pad_in_mutex_);
+        return pad_in;
+    }
+
+    /**
+     * Replace the most recently written PadIn in place (or enqueue if empty).
+     * Does not consume; used for same-frame host-side corrections (e.g. Cyclone face remap).
+     */
+    inline void overwrite_latest_pad_in(PadIn pad_in)
+    {
+        mutex_enter_blocking(&pad_in_mutex_);
+        if (pad_in_count_ > 0) {
+            const uint8_t idx =
+                static_cast<uint8_t>((pad_in_tail_ + PAD_IN_QUEUE_SIZE - 1) % PAD_IN_QUEUE_SIZE);
+            pad_in_queue_[idx] = pad_in;
+        } else if (pad_in_count_ < PAD_IN_QUEUE_SIZE) {
+            pad_in_queue_[pad_in_tail_] = pad_in;
+            pad_in_tail_ = (pad_in_tail_ + 1) % PAD_IN_QUEUE_SIZE;
+            pad_in_count_++;
+        }
+        last_pad_in_ = pad_in;
         new_pad_in_.store(true);
         mutex_exit(&pad_in_mutex_);
     }

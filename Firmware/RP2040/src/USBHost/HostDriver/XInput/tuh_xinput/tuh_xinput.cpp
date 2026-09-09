@@ -14,6 +14,9 @@
 #if defined(CONFIG_EN_USB_HOST)
 #include "pio_usb.h"
 #endif
+#if defined(CONFIG_OGXM_DEBUG)
+#include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2Trace.h"
+#endif
 
 namespace tuh_xinput {
 
@@ -154,6 +157,13 @@ static void service_usb_host_frames(uint8_t frames = 4)
 
 bool send_ctrl_xfer(uint8_t dev_addr, const tusb_control_request_t* request, uint8_t* buffer, tuh_xfer_cb_t complete_cb, uintptr_t user_data)
 {
+#if defined(CONFIG_OGXM_DEBUG)
+    if (request)
+    {
+        GameSirCyclone2Trace::log_host_ctrl(dev_addr, request->bmRequestType, request->bRequest,
+                                            request->wValue, request->wIndex, request->wLength);
+    }
+#endif
     tuh_xfer_s transfer = 
     {
         .daddr = dev_addr,
@@ -246,7 +256,6 @@ static bool init()
 
 static bool open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const *desc_itf, uint16_t max_len)
 {
-    TU_LOG1("XInput Open\r\n");
     TU_VERIFY(desc_itf->bNumEndpoints > 0);
 
     DevType dev_type = DevType::UNKNOWN;
@@ -288,7 +297,10 @@ static bool open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const *
         }
     }
 
+    /* Log only after the interface is actually claimed — early log misled Cyclone Switch-mode debug. */
     TU_VERIFY(dev_type != DevType::UNKNOWN && itf_type != ItfType::UNKNOWN);
+    TU_LOG1("XInput Open (claimed) itf=%u subclass=0x%02X proto=0x%02X\r\n",
+            desc_itf->bInterfaceNumber, desc_itf->bInterfaceSubClass, desc_itf->bInterfaceProtocol);
 
     Interface* interface = get_free_itf(dev_addr);
     TU_VERIFY(interface != nullptr);
@@ -574,6 +586,10 @@ bool send_report(uint8_t dev_addr, uint8_t instance, const uint8_t *buffer, uint
     Interface* interface = get_itf_by_instance(dev_addr, instance);
     TU_VERIFY(interface != nullptr);
     TU_VERIFY(usbh_edpt_claim(dev_addr, interface->ep_out));
+
+#if defined(CONFIG_OGXM_DEBUG)
+    GameSirCyclone2Trace::log_host_tx(dev_addr, "interrupt-OUT", interface->ep_out, buffer, len);
+#endif
 
     std::memcpy(interface->ep_out_buffer.data(), buffer, len);
 

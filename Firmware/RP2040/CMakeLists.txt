@@ -49,6 +49,9 @@ set(SOURCES_BOARD
 
     ${SRC}/TaskQueue/TaskQueue.cpp
 
+    ${SRC}/Input/InputSlot.cpp
+    ${SRC}/Input/HidRxDebug.cpp
+
     ${SRC}/Board/ogxm_log.cpp
     ${SRC}/Board/esp32_api.cpp
     ${SRC}/Board/board_api.cpp
@@ -123,6 +126,7 @@ set(INC_DIRS_BOARD
 # Config options
 
 option(OGXM_SWITCH2_HID_RAW_LOG "UART: log Switch 2 Pro (0x2069) 64B HID when the 3 digital button bytes change only (Debug)" OFF)
+option(OGXM_BT_CLEAR_KEYS_ON_BOOT "Debug: erase all Bluetooth bonds once at BT stack ready (do not leave on)" OFF)
 
 set(MAX_GAMEPADS 1 CACHE STRING "Set number of gamepads, 1 to 4")
 if (MAX_GAMEPADS GREATER 4 OR MAX_GAMEPADS LESS 1)
@@ -303,6 +307,7 @@ if(EN_USB_HOST)
     add_compile_definitions(CONFIG_EN_USB_HOST=1)
     list(APPEND SOURCES_BOARD
         ${SRC}/USBHost/tuh_callbacks.cpp
+        ${SRC}/USBHost/UsbHostLifecycle.cpp
         # HID
         ${SRC}/USBHost/HostDriver/DInput/DInput.cpp
         ${SRC}/USBHost/HostDriver/PSClassic/PSClassic.cpp
@@ -314,6 +319,13 @@ if(EN_USB_HOST)
         ${SRC}/USBHost/HostDriver/PS3/PS3.cpp
         ${SRC}/USBHost/HostDriver/N64/N64.cpp
         ${SRC}/USBHost/HostDriver/HIDGeneric/HIDGeneric.cpp
+        ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4Wukong.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2Trace.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2SwitchWired.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2Ds4Wired.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2HidPassive.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2BtProbe.cpp
 
         ${SRC}/USBHost/HIDParser/HIDJoystick.cpp
         ${SRC}/USBHost/HIDParser/HIDReportDescriptor.cpp
@@ -342,7 +354,11 @@ if(EN_BLUETOOTH)
     
     list(APPEND SOURCES_BOARD
         ${SRC}/Bluepad32/Bluepad32.cpp
+        ${SRC}/Bluepad32/ClassicPairingDebug.cpp
         ${SRC}/BLEServer/BLEServer.cpp
+        ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtProbe.cpp
+        ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBt.cpp
+        ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtL2cap.cpp
     )
     list(APPEND INC_DIRS_BOARD
         ${SRC}
@@ -505,6 +521,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     if(OGXM_SWITCH2_HID_RAW_LOG)
         target_compile_definitions(${FW_NAME} PRIVATE OGXM_SWITCH2_HID_RAW_LOG=1)
         message(STATUS "OGXM_SWITCH2_HID_RAW_LOG: UART hex when Switch 2 Pro 3 digital button bytes change")
+    endif()
+    if(OGXM_BT_CLEAR_KEYS_ON_BOOT)
+        target_compile_definitions(${FW_NAME} PRIVATE OGXM_BT_CLEAR_KEYS_ON_BOOT=1)
+        message(STATUS "OGXM_BT_CLEAR_KEYS_ON_BOOT: will erase Bluetooth bonds at stack ready (Debug diagnostic)")
     endif()
 
     target_compile_options(${FW_NAME} PRIVATE

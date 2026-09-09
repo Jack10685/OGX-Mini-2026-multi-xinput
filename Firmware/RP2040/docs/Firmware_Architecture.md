@@ -10,6 +10,7 @@ This document explains **how OGX-Mini firmware is structured**, **how data flows
 | [Adding_Supported_Controllers.md](Adding_Supported_Controllers.md) | Capture HID reports, map buttons, Debug UART |
 | [Controller_Mappings.md](Controller_Mappings.md) | PadIn ↔ output mode tables |
 | [Wired_Controllers.md](Wired_Controllers.md) | Supported USB input VID/PID lists |
+| [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md) | Flydigi APEX 4 Wukong — wired + Bluetooth support matrix |
 
 Paths below are relative to **`Firmware/RP2040/`** unless noted.
 
@@ -34,6 +35,8 @@ OGX-Mini is a **gamepad adapter**:
 ```
 
 If you only remember one rule when extending the firmware: **always map into `PadIn` on input; never special-case every output mode inside a host driver.**
+
+**Second rule (new controllers):** give each newly supported pad its **own dedicated host/BT driver**. Do **not** modify an existing working driver to accommodate a different controller — that has caused regressions. Shared helpers are fine; controller-specific quirks stay in the new driver. Full policy: [Adding_Supported_Controllers.md — dedicated drivers](Adding_Supported_Controllers.md#architecture-requirement--dedicated-drivers-for-new-controllers).
 
 ---
 

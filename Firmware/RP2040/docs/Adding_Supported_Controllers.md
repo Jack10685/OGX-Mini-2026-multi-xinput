@@ -13,6 +13,7 @@ This guide is for **community contributors** who want to add a new USB (or Bluet
 |-------|----------|
 | How the firmware is structured / which files enable a driver | [Firmware_Architecture.md](Firmware_Architecture.md) |
 | Supported wired pads (by driver) | [Wired_Controllers.md](Wired_Controllers.md) |
+| Flydigi APEX 4 Black Myth: Wukong (wired + BT modes) | [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md) |
 | PadIn ↔ output mode mappings | [Controller_Mappings.md](Controller_Mappings.md) |
 | Capture on the adapter (required for mapping issues/PRs) | [Step 2](#step-2--capture-reports-on-the-adapter-required-for-driver-mapping) + [Step 3–4](#step-3--build-debug-firmware-and-read-uart-logs) (Debug UART) |
 | PC scripts in `Tools/controller_capture/` — **not accepted** | `controller_capture.py`, `hidraw_full_report_dump.py`, etc. |
@@ -43,17 +44,39 @@ Canonical state is **`Gamepad::PadIn`** (Xbox-style names: A/B/X/Y, LB/RB, trigg
 
 ---
 
+## Architecture requirement — dedicated drivers for new controllers
+
+**Do not modify an existing controller driver to add support for a different controller.**
+
+This fork’s rule going forward: every newly supported controller gets its **own dedicated driver** (USB `HostDriver` class and/or Bluepad32 parser). Expanding an existing driver with `if (device == …)` branches has already caused regressions on pads that previously worked. **Adding Controller B must not risk breaking Controller A.**
+
+| Do | Do not |
+|----|--------|
+| New class/files under `USBHost/HostDriver/MyPad/` (or a dedicated Bluepad32 parser) | Patch XboxOne / PS4 / SwitchPro / etc. to “also handle” a different pad |
+| Precise VID/PID / descriptor matching for that controller or family | Broad detection that can steal another driver’s devices |
+| Keep init, report parse, rumble, LEDs, quirks, timing **inside** the new driver | Move controller-specific exceptions into a shared driver because two pads look similar |
+| Treat existing working drivers as **read-only** unless a change is unavoidable | Change another driver’s ID tables, handshake, parse, or mappings “just for” the new pad |
+| Reuse genuine shared helpers (`HostDriver` base, USB/HID utilities, PadIn helpers) | Duplicate or fork by editing the old driver’s behavior in place |
+
+**Variants:** If hardware revisions are proven **functionally identical** (same protocol and report layout), they may share one driver (e.g. an extra VID/PID on that driver’s list). When **uncertain**, create a **separate** driver first; consolidate later after testing.
+
+**Before touching an existing driver**, ask: *Can this requirement live entirely in the new driver’s code?* If yes, do that. If a shared subsystem must change, keep the change minimal and preserve existing driver behavior.
+
+Cursor agents follow the same rule via `.cursor/rules/dedicated-controller-drivers.mdc`.
+
+---
+
 ## Step 0 — Decide what kind of work you need
 
 | Situation | Typical fix |
 |-----------|-------------|
-| Pad already speaks **Xbox 360 / One / Series / OG** over USB (XInput / GIP) | Often **no VID list** — the XInput class driver mounts it. If it fails, capture logs and compare to `Xbox360` / `XboxOne` hosts. |
-| Same protocol as an existing list (DInput, PS3/4/5, Switch wired, N64, …) but **new VID/PID** | Add `{ vid, pid }` to the matching array in [`HardwareIDs.h`](../src/USBHost/HardwareIDs.h). |
-| Standard HID joystick; unknown VID/PID | May already work as **HID Generic**. If buttons are wrong, fix mapping in `HIDGeneric.cpp` **or** add a dedicated driver. |
-| Custom report / init handshake / multi-interface vendor protocol | **New `HostDriver`** (+ optional descriptor struct under `Descriptors/`). |
-| Bluetooth-only pad | Bluepad32 support (or a dedicated BLE parser). On-device UART capture on the adapter still helps document the layout. |
+| Pad already speaks **Xbox 360 / One / Series / OG** over USB (XInput / GIP) **and mounts correctly** | Often no new code — the existing XInput-class host path claims it. If it fails or needs different init/parse, **new dedicated driver**, not patches to another Xbox driver’s quirks. |
+| **Proven-identical** clone/revision of an existing driver’s protocol + report layout | Add `{ vid, pid }` only to **that** driver’s list in [`HardwareIDs.h`](../src/USBHost/HardwareIDs.h) — after hex dumps match. |
+| Different brand/layout, custom handshake, or “similar but not identical” | **New `HostDriver`** (+ descriptor under `Descriptors/`). Do **not** extend XboxOne/PS4/Switch/etc. with special cases. |
+| Standard HID joystick; unknown VID/PID | May already work as **HID Generic**. If buttons are wrong, prefer a **dedicated driver** over growing `HIDGeneric` with brand-specific hacks. |
+| Bluetooth-only pad | Dedicated Bluepad32 parser (or custom BLE path). Do not overload an unrelated BT parser. On-device UART capture on the adapter still helps document the layout. |
 
-**VID/PID alone is not always enough.** Mode switches (XInput vs DInput vs Switch), report IDs, init packets, and stick axis polarity all matter. Prefer the mode that matches an existing driver when the pad offers one.
+**VID/PID alone is not always enough.** Mode switches (XInput vs DInput vs Switch), report IDs, init packets, and stick axis polarity all matter. When in doubt, **new dedicated driver**.
 
 ---
 
@@ -244,21 +267,23 @@ Always call `tuh_hid_receive_report(address, instance)` again after handling a H
 
 ---
 
-## Step 5 — Easiest path: add VID/PID to an existing driver list
+## Step 5 — Proven-identical variant only: add VID/PID to an existing driver list
 
-1. Confirm the pad’s **full report** matches an existing driver (DInput Sony-style, PS4, Switch wired, N64, etc.) — compare hex dumps to `Descriptors/*.h`, not SDL indices alone.
-2. Edit `Firmware/RP2040/src/USBHost/HardwareIDs.h` — add `{0xVID, 0xPID}, // Name / mode` to the correct array (`DINPUT_IDS`, `PS4_IDS`, `SWITCH_WIRED_IDS`, …).
+Use this path **only** when adapter-side dumps prove the pad is the **same protocol and report layout** as an existing driver (same bit masks / offsets). Same console generation or manufacturer is **not** enough. If anything differs (init, report ID, packed fields, quirks), go to **Step 6** and create a dedicated driver.
+
+1. Confirm the pad’s **adapter-side full report** matches an existing driver — compare UART hex to `Descriptors/*.h`, not PC/SDL indices.
+2. Edit `Firmware/RP2040/src/USBHost/HardwareIDs.h` — add `{0xVID, 0xPID}, // Name / mode` to **that** driver’s array only (`DINPUT_IDS`, `PS4_IDS`, `SWITCH_WIRED_IDS`, …). Do not change that driver’s parse/init code for the new ID.
 3. Arrays are wired through `HOST_TYPE_MAP` at the bottom of the same file — new arrays need a new `HostTypeMap` entry **and** a `case` in `HostManager::setup_driver`.
-4. Rebuild, flash, test every face button, bumpers, triggers, sticks, d-pad, Start/Back/Guide.
+4. Rebuild, flash, test every face button, bumpers, triggers, sticks, d-pad, Start/Back/Guide **and** re-test a known-good pad on the same driver.
 5. Document the pad in [Wired_Controllers.md](Wired_Controllers.md) and mention it in the PR.
 
 **Do not** put Microsoft XInput pads (`045E` gamepads that use the XInput class) into `DINPUT_IDS` — that can double-bind HID + XInput and break input (see comments in `HardwareIDs.h`).
 
 ---
 
-## Step 6 — Create a new USB host driver (custom brand / layout)
+## Step 6 — Create a new USB host driver (default for new controllers)
 
-Use a small existing driver as a template: **`N64`** or **`PSClassic`** (simple HID → PadIn). More complex examples: **`DInput`**, **`PS4`**, **`SwitchPro`**.
+**Default path** for any pad that is not a proven-identical variant. Copy structure from a small existing driver as a **template** (`N64`, `PSClassic`); more complex references: `DInput`, `PS4`, `SwitchPro`. **Copy useful patterns — do not edit those drivers’ behavior to fit the new pad.**
 
 ### Checklist
 
@@ -384,6 +409,7 @@ Update:
 
 ## Common pitfalls
 
+- **Do not extend an existing driver’s parse/init to fit a “similar” pad** — create a dedicated driver instead ([architecture requirement](#architecture-requirement--dedicated-drivers-for-new-controllers)).
 - **Submitting `Tools/controller_capture/` dumps** — **`controller_capture.py`**, **`hidraw_full_report_dump.py`**, and related PC script output are **not accepted** for mapping or new-pad support at this time. Use **Debug UART** full hex from the adapter instead.
 - **Mapping from PC hidraw / SDL indices** — drivers need the **adapter-side** report layout; capture on the Pico host (Step 4).
 - **Wrong mode** on multi-mode pads — capture and test the mode you listed in `HardwareIDs.h`.

@@ -19,7 +19,15 @@ namespace bluepad32 {
      * PIO USB host + BT mutual exclusion. Call once before run_task(); pass nullptr to disable.
      */
     void set_pico_w_pio_usb_mux_tick(void (*tick_cb)(void));
-    /** Disconnect all BT gamepads and block new connections (PIO wired USB took over). */
+    /**
+     * Quiet BR/LE new-connection scans during USB host bring-up / enumeration.
+     * Does not disconnect existing Bluetooth pads (wait until USB mount succeeds).
+     */
+    void wired_usb_quiet_bt_scans();
+    /**
+     * After a wired USB controller is successfully mounted: disconnect real BT pads
+     * and block new BT connections. Empty Bluepad32 slots are never disconnected.
+     */
     void wired_usb_takeover_disconnect_bt();
     /** Re-enable BT pairing after wired USB device unplugged. */
     void wired_usb_release_enable_bt_pairing();

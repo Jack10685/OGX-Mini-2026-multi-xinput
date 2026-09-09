@@ -16,6 +16,10 @@ enum class HostDriverType
     PS4,
     PS5,
     N64,
+    /** Debug probe: Flydigi APEX 4 Wukong / V1 composite (04B4:2412). Not production mapping. */
+    FLYDIGI_APEX4_WUKONG,
+    /** GameSir Cyclone 2: wired XInput + session-owned Switch NS / DS4. Debug builds. */
+    GAMESIR_CYCLONE2,
     XBOXOG,
     XBOXONE,
     XBOX360W,
