@@ -450,9 +450,24 @@ void pico_w::initialize() {
     OGXM_LOG("PicoW init: driver inited\n");
 }
 
+/**
+ * Diagnostic Core1 start: reset immediately before launch (no long gap after
+ * an earlier reset), then a short settle. Intermittent hangs were observed with
+ * reset-at-run-start → tud_init → launch; FIFO handshake can stall if Core1 is
+ * left in boot-ROM wait across that work. Does not drain the FIFO manually.
+ */
+static void core1_reset_settle_and_launch(void (*entry)(void)) {
+    OGXM_LOG("[CORE1] explicit reset\n");
+    multicore_reset_core1();
+    sleep_ms(5);
+    OGXM_LOG("[CORE1] launching\n");
+    multicore_launch_core1(entry);
+    OGXM_LOG("[CORE1] launch returned\n");
+}
+
 void pico_w::run() {
     OGXM_LOG("PicoW run: start\n");
-    multicore_reset_core1();
+    /* Do not reset Core1 here — reset immediately before launch (see core1_reset_settle_and_launch). */
 
     UserSettings& user_settings = UserSettings::get_instance();
     DeviceDriver* device_driver = DeviceManager::get_instance().get_driver();
@@ -464,7 +479,7 @@ void pico_w::run() {
 #if defined(CONFIG_EN_USB_HOST)
     if (wii_mode) {
         OGXM_LOG("PicoW run: launching Core1 (Wii USB host)\n");
-        multicore_launch_core1(core1_task_wii_usb_host);
+        core1_reset_settle_and_launch(core1_task_wii_usb_host);
         OGXM_LOG("PicoW run: Core1 launched, starting Wiimote BT (discoverable as Nintendo RVL-CNT-01)\n");
         board_api::init_bluetooth();
         wiimote_emulator_set_led(wii_led_on, wii_led_off);
@@ -498,7 +513,7 @@ void pico_w::run() {
         if (ps2_poll_mode) {
             /* PS2: BT on Core1 (like Switch/PS3); Core0 main loop does process() + psx_device_poll(). */
             OGXM_LOG("PicoW run: launching Core1 (BT)\n");
-            multicore_launch_core1(core1_task);
+            core1_reset_settle_and_launch(core1_task);
         } else {
             OGXM_LOG("PicoW run: Core0 calling init_bluetooth/set_led/BLEServer\n");
             board_api::init_bluetooth();
@@ -509,11 +524,11 @@ void pico_w::run() {
                 dreamcast_set_core1_device_mode(input_src != HostInputSource::DREAMCAST_GPIO);
             }
             if (current_driver == DeviceDriverType::GAMECUBE) {
-                multicore_launch_core1(gamecube_core1_entry);
+                core1_reset_settle_and_launch(gamecube_core1_entry);
             } else if (current_driver == DeviceDriverType::N64) {
-                multicore_launch_core1(n64_core1_entry);
+                core1_reset_settle_and_launch(n64_core1_entry);
             } else {
-                multicore_launch_core1(dreamcast_core1_entry);
+                core1_reset_settle_and_launch(dreamcast_core1_entry);
             }
             /* Let Core1 reach flash_safe_execute_core_init() before we enter run_task (BT stack may touch flash). */
             sleep_ms(100);
@@ -525,7 +540,7 @@ void pico_w::run() {
     } else {
         tud_init(BOARD_TUD_RHPORT);
         OGXM_LOG("PicoW run: tud_init done, launching Core1 (BT)\n");
-        multicore_launch_core1(core1_task);
+        core1_reset_settle_and_launch(core1_task);
         OGXM_LOG("PicoW run: Core1 (BT) launched\n");
 
         HostInputSource input_src = user_settings.get_input_source();
