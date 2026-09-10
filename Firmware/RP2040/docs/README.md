@@ -13,7 +13,7 @@ This folder holds **firmware user guides**, **references**, and **contributor** 
 | [Support_Issue_Requirements.md](Support_Issue_Requirements.md) | **Required details** for GitHub issues. Incomplete reports may be **closed or delayed**. |
 | [Building_From_Source.md](Building_From_Source.md) | Clone, submodules, **required tools**, Pico SDK, and build/flash on Linux / macOS / Windows. |
 | [Firmware_Architecture.md](Firmware_Architecture.md) | How the firmware is structured, runtime flow, modules, and **every file to touch** when adding host/device drivers. |
-| [Adding_Supported_Controllers.md](Adding_Supported_Controllers.md) | Add a new input pad: VID/PID, **full HID reports**, host drivers, PadIn mapping, Debug UART. |
+| [Adding_Supported_Controllers.md](Adding_Supported_Controllers.md) | Add a new input pad: **dedicated driver by default**, adapter-side capture, PadIn mapping, Debug UART. |
 | [Tools/controller_capture](../../../Tools/controller_capture/README.md) | Legacy PC helpers — **not accepted** for mapping submissions |
 | [README — Support policy](../../README.md#support-policy) | Maintainer-supported boards and first-party controller policy. |
 
@@ -38,6 +38,9 @@ How to use specific output modes and related setup.
 | Document | Description |
 |----------|-------------|
 | [Wired_Controllers.md](Wired_Controllers.md) | Supported **wired USB** input pads by host driver (VID/PID lists). |
+| [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md) | **Flydigi APEX 4 Black Myth: Wukong** — wired + Bluetooth modes, limitations, 2.4 GHz untested. |
+| [GameSir_Cyclone2.md](GameSir_Cyclone2.md) | **GameSir Cyclone 2** — wired, 2.4 GHz dongle, and Bluetooth mode matrix. |
+| [Victrix_Gambit.md](Victrix_Gambit.md) | **Victrix Gambit Tournament Controller / Gambit Prime** — wired Xbox GIP (`0E6F:0250` physically verified). Press Home after connect. |
 | [Controller_Mappings.md](Controller_Mappings.md) | **PadIn** master reference: input → PadIn → every output mode. |
 
 ---

@@ -30,14 +30,16 @@ namespace
 		return cmd == SwitchPro::REPORT_ID_OUTPUT_SUBCMD ||
 		       cmd == SwitchPro::REPORT_ID_OUTPUT_RUMBLE ||
 		       cmd == 0x11 ||
-		       cmd == SwitchPro::CMD::AND_RUMBLE;
+		       cmd == SwitchPro::CMD::AND_RUMBLE ||
+		       cmd == SwitchPro::CMD::AND_RUMBLE_LEGACY;
 	}
 
 	bool is_subcommand_output_cmd(uint8_t cmd)
 	{
 		return cmd == SwitchPro::REPORT_ID_OUTPUT_SUBCMD ||
 		       cmd == 0x11 ||
-		       cmd == SwitchPro::CMD::AND_RUMBLE;
+		       cmd == SwitchPro::CMD::AND_RUMBLE ||
+		       cmd == SwitchPro::CMD::AND_RUMBLE_LEGACY;
 	}
 }
 

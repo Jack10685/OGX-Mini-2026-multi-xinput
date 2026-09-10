@@ -13,6 +13,7 @@ Also read the [Support policy](../../../README.md#support-policy) in the main RE
 | Support policy (controllers / boards) | [README — Support policy](../../../README.md#support-policy) |
 | Adding a controller yourself | [Adding_Supported_Controllers.md](Adding_Supported_Controllers.md) |
 | Wired pad lists | [Wired_Controllers.md](Wired_Controllers.md) |
+| Flydigi APEX 4 Wukong (modes / limitations) | [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md) |
 | Full HID report capture (required for mapping) | On-device **Debug UART** — see [Adding supported controllers](Adding_Supported_Controllers.md#step-2--capture-reports-on-the-adapter-required-for-driver-mapping) |
 
 ---

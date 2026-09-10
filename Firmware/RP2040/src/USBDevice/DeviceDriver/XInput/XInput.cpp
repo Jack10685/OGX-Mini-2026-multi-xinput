@@ -5,6 +5,11 @@
 #include "tusb.h"
 #include "USBDevice/DeviceDriver/XInput/tud_xinput/tud_xinput.h"
 #include "USBDevice/DeviceDriver/XInput/XInput.h"
+#include "Board/ogxm_log.h"
+#if defined(CONFIG_EN_USB_HOST)
+#include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2Trace.h"
+#include "Input/InputSlot.h"
+#endif
 
 extern "C" {
 #include "xsm3.h"
@@ -38,6 +43,48 @@ namespace {
 			xsm3_auth_state = Xsm3AuthState::Authenticated;
 		}
 	}
+
+	/** Cyclone 2 Switch → XInput: swap final Xbox face bits once (A↔B, X↔Y). */
+#if defined(CONFIG_EN_USB_HOST)
+	static void cyclone2_switch_final_face_swap(uint8_t& buttons1) {
+		constexpr uint8_t kFace =
+			XInput::Buttons1::A | XInput::Buttons1::B |
+			XInput::Buttons1::X | XInput::Buttons1::Y;
+		const bool a = (buttons1 & XInput::Buttons1::A) != 0;
+		const bool b = (buttons1 & XInput::Buttons1::B) != 0;
+		const bool x = (buttons1 & XInput::Buttons1::X) != 0;
+		const bool y = (buttons1 & XInput::Buttons1::Y) != 0;
+
+#if defined(CONFIG_OGXM_DEBUG)
+		{
+			static uint8_t s_prev = 0xFF;
+			const uint8_t cur = static_cast<uint8_t>(
+				(a ? 1u : 0u) | (b ? 2u : 0u) | (x ? 4u : 0u) | (y ? 8u : 0u));
+			if (cur != s_prev) {
+				s_prev = cur;
+				OGXM_LOG("\n[CYCLONE2 FINAL X360 BEFORE]\nA=%u\nB=%u\nX=%u\nY=%u\n",
+					 a ? 1u : 0u, b ? 1u : 0u, x ? 1u : 0u, y ? 1u : 0u);
+				OGXM_LOG("[CYCLONE2 FINAL X360 AFTER]\nA=%u\nB=%u\nX=%u\nY=%u\n",
+					 b ? 1u : 0u, a ? 1u : 0u, y ? 1u : 0u, x ? 1u : 0u);
+			}
+		}
+#endif
+
+		buttons1 = static_cast<uint8_t>(buttons1 & ~kFace);
+		if (b) {
+			buttons1 = static_cast<uint8_t>(buttons1 | XInput::Buttons1::A);
+		}
+		if (a) {
+			buttons1 = static_cast<uint8_t>(buttons1 | XInput::Buttons1::B);
+		}
+		if (y) {
+			buttons1 = static_cast<uint8_t>(buttons1 | XInput::Buttons1::X);
+		}
+		if (x) {
+			buttons1 = static_cast<uint8_t>(buttons1 | XInput::Buttons1::Y);
+		}
+	}
+#endif
 }
 
 void XInputDevice::initialize()
@@ -144,9 +191,23 @@ void XInputDevice::process(const uint8_t idx, Gamepad& gamepad)
 			tud_remote_wakeup();
 	}
 
-	// send_report() only transmits when endpoint is free; otherwise we keep latest in_report_ for get_report_cb
-	tud_xinput::send_report((uint8_t*)&in_report_, sizeof(XInput::InReport));
+	/* Final face swap for Cyclone 2 Switch only — after all PadIn→XInput mapping. */
+#if defined(CONFIG_EN_USB_HOST)
+	if (GameSirCyclone2Trace::cyclone_switch_input_active()) {
+		cyclone2_switch_final_face_swap(in_report_.buttons[1]);
+	}
+#endif
 
+	// send_report() only transmits when endpoint is free; otherwise we keep latest in_report_ for get_report_cb
+	if (tud_xinput::send_report((uint8_t*)&in_report_, sizeof(XInput::InReport))) {
+#if defined(CONFIG_EN_USB_HOST)
+		InputSlot::note_xinput_sent();
+#endif
+	} else {
+#if defined(CONFIG_EN_USB_HOST)
+		InputSlot::note_xinput_busy();
+#endif
+	}
     if (tud_xinput::receive_report(reinterpret_cast<uint8_t*>(&out_report_), sizeof(XInput::OutReport)) &&
         out_report_.report_id == XInput::OutReportID::RUMBLE)
     {

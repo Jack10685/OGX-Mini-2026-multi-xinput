@@ -8,11 +8,15 @@
 #include "USBHost/HostDriver/XInput/tuh_xinput/tuh_xinput.h"
 #include "USBHost/HostDriver/XInput/tuh_xinput/tuh_xinput_cmd.h"
 #include "USBHost/HostDriver/XInput/XboxArcadeStick.h"
+#include "USBHost/HostDriver/VictrixGambit/VictrixGambit.h"
 
 #include "Board/Config.h"
 #include "Board/board_api.h"
 #if defined(CONFIG_EN_USB_HOST)
 #include "pio_usb.h"
+#endif
+#if defined(CONFIG_OGXM_DEBUG)
+#include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2Trace.h"
 #endif
 
 namespace tuh_xinput {
@@ -154,6 +158,13 @@ static void service_usb_host_frames(uint8_t frames = 4)
 
 bool send_ctrl_xfer(uint8_t dev_addr, const tusb_control_request_t* request, uint8_t* buffer, tuh_xfer_cb_t complete_cb, uintptr_t user_data)
 {
+#if defined(CONFIG_OGXM_DEBUG)
+    if (request)
+    {
+        GameSirCyclone2Trace::log_host_ctrl(dev_addr, request->bmRequestType, request->bRequest,
+                                            request->wValue, request->wIndex, request->wLength);
+    }
+#endif
     tuh_xfer_s transfer = 
     {
         .daddr = dev_addr,
@@ -177,7 +188,12 @@ static bool send_gip_packet(Interface* interface, uint8_t dev_addr, uint8_t inst
     std::memcpy(buf, packet, len);
     if (assign_seq && len >= 3)
     {
-        buf[2] = interface->gip_out_seq++;
+        uint8_t seq;
+        do
+        {
+            seq = interface->gip_out_seq++;
+        } while (interface->gip_seq_skip_zero && seq == 0);
+        buf[2] = seq;
     }
     return send_report(dev_addr, instance, buf, len);
 }
@@ -205,6 +221,12 @@ static void xboxone_init(Interface *interface, uint8_t dev_addr, uint8_t instanc
     uint16_t PID, VID;
     tuh_vid_pid_get(dev_addr, &VID, &PID);
 
+    /* Victrix Gambit: dedicated VictrixGambitHost owns POWER/LED/SECURITY — skip here. */
+    if (VictrixGambitHost::is_known_id(VID, PID))
+    {
+        return;
+    }
+
     const bool arcade = interface->gip_arcade_stick || XboxArcadeStick::is_xbox_one_gip(VID, PID);
     interface->gip_out_seq = 0;
 
@@ -225,7 +247,7 @@ static void xboxone_init(Interface *interface, uint8_t dev_addr, uint8_t instanc
         wait_for_tx_complete(dev_addr, interface->ep_out);
     }
 
-    //Required for PDP aftermarket controllers
+    //Required for PDP aftermarket controllers (not Victrix Gambit — see above)
     if (VID == 0x0e6f)
     {
         send_gip_packet(interface, dev_addr, instance, XboxOne::PDP_LED_ON, sizeof(XboxOne::PDP_LED_ON));
@@ -246,7 +268,6 @@ static bool init()
 
 static bool open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const *desc_itf, uint16_t max_len)
 {
-    TU_LOG1("XInput Open\r\n");
     TU_VERIFY(desc_itf->bNumEndpoints > 0);
 
     DevType dev_type = DevType::UNKNOWN;
@@ -288,7 +309,10 @@ static bool open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const *
         }
     }
 
+    /* Log only after the interface is actually claimed — early log misled Cyclone Switch-mode debug. */
     TU_VERIFY(dev_type != DevType::UNKNOWN && itf_type != ItfType::UNKNOWN);
+    TU_LOG1("XInput Open (claimed) itf=%u subclass=0x%02X proto=0x%02X\r\n",
+            desc_itf->bInterfaceNumber, desc_itf->bInterfaceSubClass, desc_itf->bInterfaceProtocol);
 
     Interface* interface = get_free_itf(dev_addr);
     TU_VERIFY(interface != nullptr);
@@ -390,11 +414,25 @@ static bool xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uin
     {
         if (dir == TUSB_DIR_IN)
         {
+            uint16_t f_vid = 0, f_pid = 0;
+            tuh_vid_pid_get(dev_addr, &f_vid, &f_pid);
+            if (VictrixGambitHost::is_known_id(f_vid, f_pid))
+            {
+                VictrixGambitHost::on_in_xfer_result(dev_addr, instance, false, 0);
+            }
             receive_report(dev_addr, instance);
         }
-        else if (report_sent_cb)
+        else
         {
-            report_sent_cb(dev_addr, instance, interface->ep_out_buffer.data(), interface->ep_out_size);
+            if (out_xfer_complete_cb)
+            {
+                out_xfer_complete_cb(dev_addr, instance, false, interface->ep_out_buffer.data(),
+                                     static_cast<uint16_t>(xferred_bytes));
+            }
+            else if (report_sent_cb)
+            {
+                report_sent_cb(dev_addr, instance, interface->ep_out_buffer.data(), interface->ep_out_size);
+            }
         }
         return true;
     }
@@ -413,6 +451,30 @@ static bool xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uin
 
         bool new_pad_data = false;
         uint8_t* in_buffer = interface->ep_in_buffer.data();
+
+        /* Victrix Gambit: deliver EVERY successful IN to the dedicated host for RX proof.
+         * Still ACK virtual-key when required; do not drop announce/auth/unknown. */
+        if (interface->dev_type == DevType::XBOXONE)
+        {
+            uint16_t g_vid = 0, g_pid = 0;
+            tuh_vid_pid_get(dev_addr, &g_vid, &g_pid);
+            if (VictrixGambitHost::is_known_id(g_vid, g_pid))
+            {
+                VictrixGambitHost::on_in_xfer_result(dev_addr, instance, true,
+                                                    static_cast<uint16_t>(xferred_bytes));
+                /* ACK is owned by VictrixGambitHost after header/chunk decode (xone order). */
+                if (xferred_bytes > 0)
+                {
+                    report_received_cb(dev_addr, instance, in_buffer,
+                                       static_cast<uint16_t>(xferred_bytes));
+                }
+                else
+                {
+                    receive_report(dev_addr, instance);
+                }
+                return true;
+            }
+        }
 
         switch (interface->dev_type)
         {
@@ -511,6 +573,11 @@ static bool xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uin
     }
     else
     {
+        if (out_xfer_complete_cb)
+        {
+            out_xfer_complete_cb(dev_addr, instance, true, interface->ep_out_buffer.data(),
+                                 static_cast<uint16_t>(xferred_bytes));
+        }
         if (report_sent_cb)
         {
             report_sent_cb(dev_addr, instance, interface->ep_out_buffer.data(), static_cast<uint16_t>(xferred_bytes));
@@ -575,6 +642,10 @@ bool send_report(uint8_t dev_addr, uint8_t instance, const uint8_t *buffer, uint
     TU_VERIFY(interface != nullptr);
     TU_VERIFY(usbh_edpt_claim(dev_addr, interface->ep_out));
 
+#if defined(CONFIG_OGXM_DEBUG)
+    GameSirCyclone2Trace::log_host_tx(dev_addr, "interrupt-OUT", interface->ep_out, buffer, len);
+#endif
+
     std::memcpy(interface->ep_out_buffer.data(), buffer, len);
 
     if (!usbh_edpt_xfer(dev_addr, interface->ep_out, interface->ep_out_buffer.data(), len))
@@ -611,7 +682,88 @@ bool receive_report(uint8_t dev_addr, uint8_t instance)
         return false;
     }
 
+    interface->gip_last_in_arm_ms = board_api::ms_since_boot();
     return true;
+}
+
+bool arm_gip_in(uint8_t address, uint8_t instance, const char** reason_out)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr || interface->ep_in == 0xFF)
+    {
+        if (reason_out)
+        {
+            *reason_out = "no_interface";
+        }
+        return false;
+    }
+
+    if (usbh_edpt_busy(address, interface->ep_in))
+    {
+        if (reason_out)
+        {
+            *reason_out = "ALREADY_ARMED";
+        }
+        return true;
+    }
+
+    if (!receive_report(address, instance))
+    {
+        if (reason_out)
+        {
+            *reason_out = "SUBMIT_FAILED";
+        }
+        return false;
+    }
+
+    if (reason_out)
+    {
+        *reason_out = "SUCCESS";
+    }
+    return true;
+}
+
+bool send_gip_identify(uint8_t address, uint8_t instance)
+{
+    return send_gip_out(address, instance, XboxOne::IDENTIFY_REQ, sizeof(XboxOne::IDENTIFY_REQ), true);
+}
+
+bool send_gip_ack_if_requested(uint8_t address, uint8_t instance, const uint8_t* packet,
+                               uint16_t len, uint16_t bytes_received, uint16_t remaining)
+{
+    if (!packet || len < 4)
+    {
+        return false;
+    }
+    if ((packet[1] & XboxOne::GIP_OPT_ACK) == 0)
+    {
+        return false;
+    }
+
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr)
+    {
+        return false;
+    }
+
+    /* xone gip_pkt_acknowledge: unknown, command, options, le16 length, pad[2], le16 remaining */
+    uint8_t ack[13] = {
+        XboxOne::GIP_CMD_ACK,
+        XboxOne::GIP_OPT_INTERNAL,
+        packet[2], /* sequence of the packet being acknowledged */
+        XboxOne::GIP_PL_LEN(9),
+        0x00,
+        packet[0],
+        XboxOne::GIP_OPT_INTERNAL,
+        static_cast<uint8_t>(bytes_received & 0xFFu),
+        static_cast<uint8_t>((bytes_received >> 8) & 0xFFu),
+        0x00,
+        0x00,
+        static_cast<uint8_t>(remaining & 0xFFu),
+        static_cast<uint8_t>((remaining >> 8) & 0xFFu),
+    };
+
+    return send_gip_packet(interface, address, instance, ack, sizeof(ack), false);
 }
 
 bool is_connected(uint8_t dev_addr, uint8_t instance)
@@ -659,6 +811,18 @@ void start_xboxone(uint8_t dev_addr, uint8_t instance)
     uint16_t vid = 0;
     uint16_t pid = 0;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
+
+    /* Dedicated VictrixGambitHost runs SDL-style POWER/LED/SECURITY itself. */
+    if (VictrixGambitHost::is_known_id(vid, pid))
+    {
+        prepare_gip_session(dev_addr, instance);
+        if (receive_report(dev_addr, instance))
+        {
+            interface->gip_last_in_arm_ms = board_api::ms_since_boot();
+        }
+        return;
+    }
+
     const bool arcade = interface->gip_arcade_stick || XboxArcadeStick::is_xbox_one_gip(vid, pid);
 
     interface->gip_power_sent = false;
@@ -687,6 +851,178 @@ void start_xboxone(uint8_t dev_addr, uint8_t instance)
     service_usb_host_frames();
     xboxone_init(interface, dev_addr, instance);
     service_usb_host_frames();
+}
+
+bool send_gip_out(uint8_t address, uint8_t instance, const uint8_t* packet, uint16_t len,
+                  bool assign_seq)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr || packet == nullptr || len == 0)
+    {
+        return false;
+    }
+    return send_gip_packet(interface, address, instance, packet, len, assign_seq);
+}
+
+bool out_endpoint_ready(uint8_t address, uint8_t instance)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr || interface->ep_out == 0xFF)
+    {
+        return false;
+    }
+    return !usbh_edpt_busy(address, interface->ep_out);
+}
+
+void prepare_gip_session(uint8_t address, uint8_t instance)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr)
+    {
+        return;
+    }
+    interface->gip_power_sent = false;
+    interface->gip_last_in_ok_ms = 0;
+    interface->gip_last_in_arm_ms = 0;
+    interface->gip_out_seq = 0;
+    interface->gip_seq_skip_zero = false;
+
+    uint16_t vid = 0;
+    uint16_t pid = 0;
+    tuh_vid_pid_get(address, &vid, &pid);
+    if (VictrixGambitHost::is_known_id(vid, pid))
+    {
+        /* xone: host-generated GIP sequences are nonzero. */
+        interface->gip_seq_skip_zero = true;
+        interface->gip_out_seq = 1;
+    }
+}
+
+void mark_gip_power_sent(uint8_t address, uint8_t instance)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr)
+    {
+        return;
+    }
+    interface->gip_power_sent = true;
+}
+
+void get_endpoint_info(uint8_t address, uint8_t instance, uint8_t* itf_num, uint8_t* ep_in,
+                       uint8_t* ep_out, uint16_t* ep_in_size, uint16_t* ep_out_size)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr)
+    {
+        return;
+    }
+    if (itf_num)
+    {
+        *itf_num = interface->itf_num;
+    }
+    if (ep_in)
+    {
+        *ep_in = interface->ep_in;
+    }
+    if (ep_out)
+    {
+        *ep_out = interface->ep_out;
+    }
+    if (ep_in_size)
+    {
+        *ep_in_size = interface->ep_in_size;
+    }
+    if (ep_out_size)
+    {
+        *ep_out_size = interface->ep_out_size;
+    }
+}
+
+uint8_t current_gip_seq(uint8_t address, uint8_t instance)
+{
+    Interface* interface = get_itf_by_instance(address, instance);
+    if (interface == nullptr)
+    {
+        return 0;
+    }
+    return interface->gip_out_seq;
+}
+
+namespace {
+
+set_interface_complete_cb_t g_set_interface_cb = nullptr;
+
+void set_interface_complete_trampoline(tuh_xfer_t* xfer)
+{
+    const set_interface_complete_cb_t cb = g_set_interface_cb;
+    g_set_interface_cb = nullptr;
+    if (!cb || !xfer)
+    {
+        return;
+    }
+    cb(xfer->daddr, xfer->result == XFER_RESULT_SUCCESS, xfer->result, xfer->user_data);
+}
+
+} // namespace
+
+bool get_interface_alt(uint8_t daddr, uint8_t itf_num, uint8_t* alt_out)
+{
+    if (!alt_out)
+    {
+        return false;
+    }
+    uint8_t alt = 0xFF;
+    tusb_control_request_t const request = {
+        .bmRequestType_bit =
+            {
+                .recipient = TUSB_REQ_RCPT_INTERFACE,
+                .type = TUSB_REQ_TYPE_STANDARD,
+                .direction = TUSB_DIR_IN,
+            },
+        .bRequest = TUSB_REQ_GET_INTERFACE,
+        .wValue = 0,
+        .wIndex = tu_htole16(itf_num),
+        .wLength = tu_htole16(1),
+    };
+    xfer_result_t result = XFER_RESULT_INVALID;
+    tuh_xfer_t xfer = {
+        .daddr = daddr,
+        .ep_addr = 0,
+        .setup = &request,
+        .buffer = &alt,
+        .complete_cb = nullptr,
+        .user_data = reinterpret_cast<uintptr_t>(&result),
+    };
+    if (!tuh_control_xfer(&xfer))
+    {
+        return false;
+    }
+    if (result != XFER_RESULT_SUCCESS)
+    {
+        return false;
+    }
+    *alt_out = alt;
+    return true;
+}
+
+bool disable_gip_audio_interface(uint8_t daddr, uint8_t itf_num, uint8_t itf_alt,
+                                 set_interface_complete_cb_t complete_cb, uintptr_t user_data)
+{
+    if (!complete_cb)
+    {
+        return false;
+    }
+    if (g_set_interface_cb != nullptr)
+    {
+        return false;
+    }
+    g_set_interface_cb = complete_cb;
+    if (!tuh_interface_set(daddr, itf_num, itf_alt, set_interface_complete_trampoline, user_data))
+    {
+        g_set_interface_cb = nullptr;
+        return false;
+    }
+    return true;
 }
 
 void service_gip(uint8_t dev_addr, uint8_t instance)
@@ -821,7 +1157,14 @@ bool set_rumble(uint8_t dev_addr, uint8_t instance, uint8_t rumble_l, uint8_t ru
             break;
         case DevType::XBOXONE:
             std::memcpy(buffer, XboxOne::RUMBLE, sizeof(XboxOne::RUMBLE));
-            buffer[2] = interface->gip_out_seq++;
+            {
+                uint8_t seq;
+                do
+                {
+                    seq = interface->gip_out_seq++;
+                } while (interface->gip_seq_skip_zero && seq == 0);
+                buffer[2] = seq;
+            }
             buffer[8] = rumble_l / 2; // 0 - 128
             buffer[9] = rumble_r / 2; // 0 - 128
             len = sizeof(XboxOne::RUMBLE);

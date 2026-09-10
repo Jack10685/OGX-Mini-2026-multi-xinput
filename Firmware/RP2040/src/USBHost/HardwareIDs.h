@@ -441,6 +441,22 @@ static const HardwareID N64_IDS[] =
     {0x1234, 0x0004}, // RetroUSB N64 RetroPort
 };
 
+#if defined(CONFIG_OGXM_DEBUG)
+/** Flydigi V1 vendor composite (shared by APEX 4 family). Debug probe only — identify via GET_INFO. */
+static const HardwareID FLYDIGI_APEX4_WUKONG_IDS[] =
+{
+    {0x04B4, 0x2412}, // Flydigi V1 (APEX 4 / Wukong candidate — NOT unique to Wukong)
+};
+
+/** GameSir Cyclone 2 wired PC/XInput identities (VID 0x3537 only with these PIDs). */
+static const HardwareID GAMESIR_CYCLONE2_IDS[] =
+{
+    {0x3537, 0x100B}, // pure XInput
+    {0x3537, 0x1053}, // composite Xbox + keyboard/mouse (some firmware)
+    {0x3537, 0x0575}, // yellow HID/Android — dedicated PASSIVE probe only (no app OUT)
+};
+#endif
+
 struct HostTypeMap
 {
     const HardwareID* ids;
@@ -450,6 +466,11 @@ struct HostTypeMap
 
 static const HostTypeMap HOST_TYPE_MAP[] = 
 {
+#if defined(CONFIG_OGXM_DEBUG)
+    /* Before DINPUT so dedicated probes claim known IDs first. */
+    { FLYDIGI_APEX4_WUKONG_IDS, sizeof(FLYDIGI_APEX4_WUKONG_IDS) / sizeof(HardwareID), HostDriverType::FLYDIGI_APEX4_WUKONG },
+    { GAMESIR_CYCLONE2_IDS, sizeof(GAMESIR_CYCLONE2_IDS) / sizeof(HardwareID), HostDriverType::GAMESIR_CYCLONE2 },
+#endif
     { DINPUT_IDS, sizeof(DINPUT_IDS) / sizeof(HardwareID), HostDriverType::DINPUT },
     { PS4_IDS, sizeof(PS4_IDS) / sizeof(HardwareID), HostDriverType::PS4 },
     { PS5_IDS, sizeof(PS5_IDS) / sizeof(HardwareID), HostDriverType::PS5 },

@@ -40,7 +40,10 @@ namespace SwitchPro
 		static constexpr uint8_t HID               = 0x11;
 		static constexpr uint8_t HANDSHAKE        = 0x00;
 		static constexpr uint8_t DISABLE_TIMEOUT  = 0x01;
-		static constexpr uint8_t AND_RUMBLE       = 0x12;
+		/** Rumble + subcommand output report ID (Nintendo / Bluepad32 / Chromium). */
+		static constexpr uint8_t AND_RUMBLE       = 0x01;
+		/** Legacy mistaken host TX ID some stacks used; device still accepts it. */
+		static constexpr uint8_t AND_RUMBLE_LEGACY = 0x12;
 		static constexpr uint8_t LED              = 0x30;
 		static constexpr uint8_t LED_HOME         = 0x38;
 		static constexpr uint8_t MODE             = 0x03;

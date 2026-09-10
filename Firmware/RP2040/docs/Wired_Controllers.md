@@ -13,6 +13,7 @@ This document lists controllers supported when connected to the OGX-Mini adapter
 - **Microsoft:** Xbox 360 (wired and **360 PC wireless receiver**), Xbox One / Series **wired USB**, Xbox Elite
 - **Not supported (planned):** Xbox One / Series **wireless USB dongle** (`045e:02e6`, `045e:02fe`) — see [Planned_Additions.md](Planned_Additions.md#xbox-wireless-adapter-for-windows-045e02e6-045e02fe)
 - **Third‑party:** Controllers that identify as XInput over USB (e.g. many 8BitDo, PowerA, PDP, Afterglow when in XInput mode)
+- **Victrix Gambit Tournament Controller / Gambit Prime** (`0E6F:0250` physically verified; `0E6F:02D6` externally documented only) — **Supported**, wired USB only, Xbox GIP, dedicated `VictrixGambitHost` (`VICTRIX_GAMBIT`). **Press Home/Xbox once after plugging in** to wake the controller (may stay dark until then — normal). See [Victrix_Gambit.md](Victrix_Gambit.md).
 - **Razer Atrox Arcade Stick:** **Xbox One** (`1532:0a00`, vendor GIP); **Xbox 360** (`24c6:5000`, standard XInput, digital LT/RT)
 - **Other Xbox One GIP arcade sticks:** Mad Catz FightStick TE 2 (`0738:4a01`), PDP Xbox One Arcade Stick (`0e6f:015c`), Hori RAP Hayabusa / V Kai / Fighting Commander ONE — see `XBOX_ONE_GIP_IDS` in `XboxArcadeStick.h`
 
@@ -119,7 +120,11 @@ Controllers that use the standard HID gamepad (DInput) protocol, including:
 - **Razer:** Kishi, Hydra, Serval, Raiju (PC/HID)
 - **Steam:** Steam Controller, Steam Deck (when presenting as gamepad). **Steam Controller 2026** body USB is **`28de:1302`** (generic HID if supported by the host stack). **Wireless BLE** (`28de:1303`) on Pico W / Pico 2 W / RP2354 is documented in [IMPROVEMENTS — Steam Controller 2026](IMPROVEMENTS.md#steam-controller-2026-triton--bluetooth).
 - **Sony:** DualShock 2 (via USB adapter), Steam Virtual Gamepad
-- **Flydigi:** Vader 4 Pro (DInput mode)
+- **GameSir:**
+  - **Cyclone 2** — **Supported** over wired USB (XInput / Switch / DS4), GameSir 2.4 GHz dongle (Switch / DS4 / Android/iOS), and direct Bluetooth (Switch / DS4 / Android/iOS). Dedicated host (`GameSirCyclone2Host`). Wired XInput IDs `3537:100B`/`1053`; Switch may present as `057E:2009` (do not patch SwitchProHost for Cyclone-only quirks). Full matrix: [GameSir_Cyclone2.md](GameSir_Cyclone2.md).
+- **Flydigi:**
+  - **Vader 4 Pro** (DInput mode)
+  - **APEX 4 Elite — Black Myth: Wukong Edition** — **Wired USB / PC Mode: Supported** (everything tested working). Dedicated host path (`FlydigiApex4WukongHost`). Full wired + Bluetooth mode matrix (Android / iOS / PC / Switch limitations, 2.4 GHz untested): [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md).
 - **Scuf:** Envision (Linux/HID)
 - **Elecom:** Various gamepads and adapters
 - **Other:** ThrustMaster, BigBen, Capcom Home Arcade, Cthulhu, XinMo, Zenaim, Datel, and other generic DInput/HID gamepads and arcade sticks
