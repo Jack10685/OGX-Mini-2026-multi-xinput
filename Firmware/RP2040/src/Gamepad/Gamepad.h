@@ -289,6 +289,22 @@ public:
         mutex_exit(&pad_in_mutex_);
     }
 
+    /**
+     * High-rate hosts (Switch 0x30 ~1 kHz): keep only the newest PadIn.
+     * Does not block on device output; intermediate analog samples may be dropped.
+     */
+    inline void set_pad_in_latest(PadIn pad_in)
+    {
+        mutex_enter_blocking(&pad_in_mutex_);
+        pad_in_queue_[0] = pad_in;
+        pad_in_head_ = 0;
+        pad_in_tail_ = 1;
+        pad_in_count_ = 1;
+        last_pad_in_ = pad_in;
+        new_pad_in_.store(true);
+        mutex_exit(&pad_in_mutex_);
+    }
+
     /** Non-consuming copy of the most recently written PadIn (queue newest or last_). */
     inline PadIn peek_latest_pad_in()
     {

@@ -336,6 +336,7 @@ if(EN_USB_HOST)
         ${SRC}/USBHost/HostDriver/XInput/Xbox360.cpp
         ${SRC}/USBHost/HostDriver/XInput/Xbox360W.cpp
         ${SRC}/USBHost/HostDriver/XInput/tuh_xinput/tuh_xinput.cpp
+        ${SRC}/USBHost/HostDriver/VictrixGambit/VictrixGambit.cpp
     )
     list(APPEND LIBS_BOARD
         tinyusb_host
@@ -356,6 +357,7 @@ if(EN_BLUETOOTH)
         ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtProbe.cpp
         ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBt.cpp
         ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtL2cap.cpp
+        ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2BtProbe.cpp
     )
     list(APPEND INC_DIRS_BOARD
         ${SRC}

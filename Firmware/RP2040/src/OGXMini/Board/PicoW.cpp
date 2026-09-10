@@ -33,6 +33,7 @@
 #include "host/hcd.h"
 #include "pio_usb.h"
 #include "USBHost/HostManager.h"
+#include "Input/InputSlot.h"
 #include <pico/flash.h>
 #include "Wii/WiiReportConverter.h"
 
@@ -582,6 +583,9 @@ void pico_w::run() {
             device_driver->process(i, _gamepads[i]);
         }
         bluepad32::process_pending_adaptive_triggers();
+#if defined(CONFIG_EN_USB_HOST)
+        InputSlot::poll_perf_log();
+#endif
         if (!wii_mode) {
             if (tud_mounted() && !mounted_logged) {
                 mounted_logged = true;

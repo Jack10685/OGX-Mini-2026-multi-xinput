@@ -16,6 +16,7 @@
 #include "USBHost/HostDriver/SwitchPro/SwitchPro.h"
 #include "USBHost/HostDriver/SwitchPro/Switch2UsbInitPackets.h"
 #include "USBHost/HostManager.h"
+#include "Input/InputSlot.h"
 #include "Gamepad/MotionImu.h"
 
 namespace {
@@ -40,6 +41,13 @@ bool try_hid_out_id(uint8_t address, uint8_t instance, uint8_t report_id, const 
 
 bool try_hid_out(uint8_t address, uint8_t instance, const void* report, uint16_t len) {
     return try_hid_out_id(address, instance, 0, report, len);
+}
+
+/** Always re-arm HID IN immediately — never wait on Xbox/device output. */
+bool switch_rearm_hid_in(uint8_t address, uint8_t instance) {
+    const bool ok = tuh_hid_receive_report(address, instance);
+    InputSlot::note_rearm(ok);
+    return ok;
 }
 
 constexpr uint8_t kInitForceAdvanceRetries = 8;
@@ -780,7 +788,8 @@ void SwitchProHost::apply_standard_input(Gamepad& gamepad, const uint8_t* report
         MotionImu::fill_from_switch_usb_payload(gp_in.accel, gp_in.gyro, payload, payload_len);
     }
 
-    gamepad.set_pad_in(gp_in);
+    gamepad.set_pad_in_latest(gp_in);
+    InputSlot::note_decoded();
     std::memcpy(&prev_in_report_, in_report, sizeof(SwitchPro::InReport));
     if (payload_len >= 22) {
         constexpr uint16_t kInReportSize = 10;
@@ -798,7 +807,7 @@ void SwitchProHost::process_report(Gamepad& gamepad, uint8_t address, uint8_t in
 {
     if (switch2_bringup_active_)
     {
-        tuh_hid_receive_report(address, instance);
+        (void)switch_rearm_hid_in(address, instance);
         return;
     }
 
@@ -882,7 +891,7 @@ void SwitchProHost::process_report(Gamepad& gamepad, uint8_t address, uint8_t in
 #endif
             init_state_ = InitState::DONE;
             apply_standard_input(gamepad, report, len);
-            tuh_hid_receive_report(address, instance);
+            (void)switch_rearm_hid_in(address, instance);
             return;
         }
         else if (init_profile_ != InitProfile::MinimalReportMode &&
@@ -890,12 +899,12 @@ void SwitchProHost::process_report(Gamepad& gamepad, uint8_t address, uint8_t in
         {
             init_switch_host(gamepad, address, instance);
         }
-        tuh_hid_receive_report(address, instance);
+        (void)switch_rearm_hid_in(address, instance);
         return;
     }
 
     apply_standard_input(gamepad, report, len);
-    tuh_hid_receive_report(address, instance);
+    (void)switch_rearm_hid_in(address, instance);
 }
 
 bool SwitchProHost::send_feedback(Gamepad& gamepad, uint8_t address, uint8_t instance)

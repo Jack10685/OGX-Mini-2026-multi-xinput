@@ -40,6 +40,7 @@
 #include "USBHost/HostDriver/XInput/XboxOG.h"
 #include "USBHost/HostDriver/N64/N64.h"
 #include "USBHost/HostDriver/HIDGeneric/HIDGeneric.h"
+#include "USBHost/HostDriver/VictrixGambit/VictrixGambit.h"
 #if defined(CONFIG_OGXM_DEBUG)
 #include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4Wukong.h"
 #include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2.h"
@@ -172,6 +173,7 @@ public:
 				case HostDriverType::SWITCH_PRO_2: type_name = "SWITCH_PRO_2"; break;
 				case HostDriverType::SWITCH: type_name = "SWITCH"; break;
 				case HostDriverType::GAMESIR_CYCLONE2: type_name = "GAMESIR_CYCLONE2"; break;
+				case HostDriverType::VICTRIX_GAMBIT: type_name = "VICTRIX_GAMBIT"; break;
 				case HostDriverType::XBOX360: type_name = "XBOX360"; break;
 				case HostDriverType::XBOXONE: type_name = "XBOXONE"; break;
 				case HostDriverType::XBOX360W: type_name = "XBOX360W"; break;
@@ -267,6 +269,10 @@ public:
 				debug_printf("XBOXONE Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<XboxOneHost>(gp_idx);
 				break;
+			case HostDriverType::VICTRIX_GAMBIT:
+				debug_printf("VICTRIX GAMBIT Loaded\n"); fflush(stdout);
+				interface.driver = std::make_unique<VictrixGambitHost>(gp_idx);
+				break;
 			case HostDriverType::XBOX360:
 				debug_printf("XBOX360 Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<Xbox360Host>(gp_idx);
@@ -304,7 +310,8 @@ public:
 		interface.gamepad = gamepads_[gp_idx];
 		// Wii U GC adapter: Xbox controllers report positive Y for up; Nintendo use negative
 		const bool xbox_stick_y = (driver_type == HostDriverType::XBOXONE || driver_type == HostDriverType::XBOX360
-			|| driver_type == HostDriverType::XBOX360W || driver_type == HostDriverType::XBOXOG);
+			|| driver_type == HostDriverType::XBOX360W || driver_type == HostDriverType::XBOXOG
+			|| driver_type == HostDriverType::VICTRIX_GAMBIT);
 		interface.gamepad->set_stick_y_positive_is_up(xbox_stick_y);
 		interface.driver->initialize(*interface.gamepad, device_slot.address, instance, report_desc, desc_len);
 
@@ -391,13 +398,11 @@ public:
 			}
 			if (driver && gamepad)
 			{
-#if defined(CONFIG_OGXM_DEBUG)
 				const uint8_t gp_idx = device_slot.interfaces[si].gamepad_idx;
 				const HostDriverType ht = device_slot.interfaces[si].host_driver_type;
 				InputSlot::log_hid_rx_route(address, instance,
 				                            (len > 0 && report) ? report[0] : 0, len,
 				                            gp_idx, ht);
-#endif
 				driver->process_report(*gamepad, address, instance, report, len);
 			}
 			break;
@@ -520,7 +525,8 @@ public:
 					tuh_xinput::service_wireless_ports(device_slot.address);
 				}
 				if (iface.driver_class == DriverClass::XINPUT &&
-				    iface.host_driver_type == HostDriverType::XBOXONE)
+				    (iface.host_driver_type == HostDriverType::XBOXONE ||
+				     iface.host_driver_type == HostDriverType::VICTRIX_GAMBIT))
 				{
 					tuh_xinput::service_gip(device_slot.address, iface.usb_instance);
 				}

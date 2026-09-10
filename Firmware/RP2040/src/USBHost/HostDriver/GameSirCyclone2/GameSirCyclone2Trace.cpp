@@ -30,10 +30,57 @@ uint32_t last_detach_ms_ = 0;
 uint8_t hid_passive_safety_addr_ = 0;
 bool saw_0575_ = false;
 uint32_t saw_0575_ms_ = 0;
+/** Sticky physical Cyclone ownership across USB personality remounts (wired + receiver). */
+bool physical_affinity_ = false;
+uint16_t cached_bcd_ = 0;
+uint8_t last_detach_rhport_ = 0;
+uint16_t last_detach_vid_ = 0;
+uint16_t last_detach_pid_ = 0;
+bool last_detach_had_affinity_ = false;
+bool cyclone_root_reset_requested_ = false; /* Cyclone never requests root reset. */
 GameSirCyclone2Transport::ReceiverState receiver_state_ =
     GameSirCyclone2Transport::ReceiverState::None;
 GameSirCyclone2Transport::Transport last_transport_ =
     GameSirCyclone2Transport::Transport::Unknown;
+
+void arm_physical_affinity(const char* reason)
+{
+    (void)reason;
+    /* RAM-only — never log/flash/USB/BT from here (may run near USB callbacks). */
+    physical_affinity_ = true;
+}
+
+void log_switch_driver_selection(uint8_t address, uint16_t vid, uint16_t pid,
+                                 const char* product, uint16_t bcd,
+                                 const char* fingerprint_label, bool matched)
+{
+    const auto transport = infer_usb_transport(vid, pid);
+    OGXM_LOG("[CYCLONE2 RXR] select addr=%u %04X:%04X bcd=%04X product=\"%s\" "
+             "transport=%s recv=%s fp=%s → %s\n",
+             static_cast<unsigned>(address), vid, pid, bcd,
+             product ? product : "",
+             GameSirCyclone2Transport::transport_name(transport),
+             saw_0575_ ? "YES" : "NO",
+             fingerprint_label ? fingerprint_label : "?",
+             matched ? "GAMESIR_CYCLONE2" : "SWITCH_PRO");
+}
+
+/** Presentation A — bcd 0x0326 is Cyclone-unique (genuine Pro ≈ 0x0200/0x0210). */
+bool is_cyclone2_switch_presentation_a(const char* product, uint16_t bcd)
+{
+    (void)product;
+    return bcd == 0x0326;
+}
+
+/**
+ * Presentation B — bcd 0x0116 observed on Cyclone Switch/dongle.
+ * Do not require product string (sync string fetch is unsafe in USB callbacks).
+ */
+bool is_cyclone2_switch_presentation_b(const char* product, uint16_t bcd)
+{
+    (void)product;
+    return bcd == 0x0116;
+}
 
 void utf16le_to_ascii(const uint8_t* buf, uint16_t buflen, char* out, size_t out_len)
 {
@@ -170,7 +217,7 @@ uint32_t cable_attach_ms()
 
 bool cyclone_session_active()
 {
-    return saw_cyclone_xinput_;
+    return saw_cyclone_xinput_ || physical_affinity_;
 }
 
 void note_cyclone_xinput_seen()
@@ -178,13 +225,15 @@ void note_cyclone_xinput_seen()
     if (!saw_cyclone_xinput_) {
         saw_cyclone_xinput_ = true;
         cyclone_xinput_seen_ms_ = to_ms_since_boot(get_absolute_time());
-        OGXM_LOG("[CYCLONE2] session affinity: XInput personality armed (sticky for NS/DS4)\n");
     }
+    arm_physical_affinity("XInput personality");
 }
 
 bool should_own_switch_ns(uint16_t vid, uint16_t pid)
 {
-    return saw_cyclone_xinput_ && vid == kNintendoVid && pid == 0x2009;
+    /* Wired: after green XInput. Dongle: after 3537:0575 / sticky physical affinity. */
+    return (saw_cyclone_xinput_ || saw_0575_ || physical_affinity_) &&
+           vid == kNintendoVid && pid == 0x2009;
 }
 
 bool looks_like_cyclone_switch_ns(uint8_t address, uint16_t vid, uint16_t pid)
@@ -192,33 +241,57 @@ bool looks_like_cyclone_switch_ns(uint8_t address, uint16_t vid, uint16_t pid)
     if (vid != kNintendoVid || pid != 0x2009) {
         return false;
     }
-    tusb_desc_device_t desc{};
-    if (tuh_descriptor_get_device_sync(address, &desc, sizeof(desc)) != XFER_RESULT_SUCCESS) {
-        OGXM_LOG("[CYCLONE2] NS fingerprint: device descriptor sync FAILED addr=%u "
-                 "(session=%s)\n",
-                 static_cast<unsigned>(address), saw_cyclone_xinput_ ? "YES" : "NO");
-        return false;
-    }
-    const uint16_t bcd = tu_le16toh(desc.bcdDevice);
-    char product[48]{};
-    fetch_string(address, desc.iProduct, product, sizeof(product));
 
-    /* Genuine Pro Controller product is typically "Pro Controller"; Cyclone 2 NS uses "Gamepad". */
-    const bool product_cyclone = (std::strcmp(product, "Gamepad") == 0);
-    const bool bcd_cyclone = (bcd == 0x0326);
-    if (product_cyclone || bcd_cyclone) {
-        OGXM_LOG("[CYCLONE2] NS fingerprint match addr=%u product=\"%s\" bcd=%04X "
-                 "(claim dedicated driver; not SwitchProHost)\n",
-                 static_cast<unsigned>(address), product, bcd);
-        /* Sticky session so DS4/Switch remounts stay Cyclone-owned. */
-        note_cyclone_xinput_seen();
+    /* Receiver / prior Cyclone session: RAM affinity only — no USB I/O. */
+    if (saw_0575_ || saw_cyclone_xinput_ || physical_affinity_) {
+        arm_physical_affinity("receiver/session Switch remount");
+        OGXM_LOG("[CYCLONE2 RXR] claim via affinity addr=%u\n", static_cast<unsigned>(address));
         return true;
     }
-    OGXM_LOG("[CYCLONE2] NS fingerprint miss addr=%u product=\"%s\" bcd=%04X "
-             "session=%s → leave SWITCH_PRO\n",
-             static_cast<unsigned>(address), product, bcd,
-             saw_cyclone_xinput_ ? "YES" : "NO");
+
+    /*
+     * Cold Switch fingerprint: ONE device-descriptor sync for bcd only.
+     * Never fetch strings/config here — nested sync + OGXM_LOG mutex hangs pre-plug boot.
+     * Known Cyclone bcds: 0x0326 (A), 0x0116 (B). Genuine Pro ≈ 0x0200/0x0210.
+     */
+    uint16_t bcd = cached_bcd_;
+    if (bcd == 0) {
+        tusb_desc_device_t desc{};
+        if (tuh_descriptor_get_device_sync(address, &desc, sizeof(desc)) != XFER_RESULT_SUCCESS) {
+            OGXM_LOG("[CYCLONE2 RXR] fingerprint desc fail addr=%u → SWITCH_PRO\n",
+                     static_cast<unsigned>(address));
+            return false;
+        }
+        bcd = tu_le16toh(desc.bcdDevice);
+        cached_bcd_ = bcd;
+    }
+
+    const bool match_a = is_cyclone2_switch_presentation_a(nullptr, bcd);
+    const bool match_b = is_cyclone2_switch_presentation_b(nullptr, bcd);
+    if (match_a || match_b) {
+        const char* label = match_a ? "bcd0326" : "bcd0116";
+        arm_physical_affinity(label);
+        OGXM_LOG("[CYCLONE2 RXR] fingerprint MATCH addr=%u bcd=%04X (%s)\n",
+                 static_cast<unsigned>(address), bcd, label);
+        return true;
+    }
+
+    OGXM_LOG("[CYCLONE2 RXR] fingerprint miss addr=%u bcd=%04X → SWITCH_PRO\n",
+             static_cast<unsigned>(address), bcd);
     return false;
+}
+
+void log_switch_driver_selection_banner(uint8_t address, uint16_t vid, uint16_t pid)
+{
+    const char* label = "affinity";
+    if (cached_bcd_ == 0x0326) {
+        label = "bcd0326";
+    } else if (cached_bcd_ == 0x0116) {
+        label = "bcd0116";
+    } else if (saw_0575_) {
+        label = "receiver";
+    }
+    log_switch_driver_selection(address, vid, pid, "", cached_bcd_, label, true);
 }
 
 bool should_own_ds4(uint16_t vid, uint16_t pid)
@@ -235,12 +308,8 @@ void set_hid_passive_safety(uint8_t address, bool active)
 {
     if (active) {
         hid_passive_safety_addr_ = address;
-        OGXM_LOG("\nCYCLONE2 HID SAFETY MODE ACTIVE\n");
-        OGXM_LOG("addr=%u — application OUT/feature/vendor TX suppressed\n",
-                 static_cast<unsigned>(address));
     } else if (hid_passive_safety_addr_ == address) {
         hid_passive_safety_addr_ = 0;
-        OGXM_LOG("[CYCLONE2 HID SAFETY] cleared for addr=%u\n", static_cast<unsigned>(address));
     }
 }
 
@@ -252,15 +321,11 @@ bool hid_passive_safety_active(uint8_t address)
 void log_blocked_hid_out(uint8_t address, uint8_t instance, const char* caller,
                          const uint8_t* data, uint16_t len)
 {
-    OGXM_LOG("\n[CYCLONE2 HID SAFETY]\nBLOCKED OUT REPORT\n");
-    OGXM_LOG("caller:\n%s\n", caller ? caller : "?");
-    OGXM_LOG("addr=%u instance=%u\n", static_cast<unsigned>(address),
-             static_cast<unsigned>(instance));
-    OGXM_LOG("Reason:\nHID-mode initialization not yet verified\n");
-    if (data && len > 0) {
-        OGXM_LOG("report:\n");
-        OGXM_LOG_HEX(data, len > 32 ? 32 : len);
-    }
+    (void)data;
+    (void)len;
+    OGXM_LOG("[CYCLONE2 RXR] blocked OUT addr=%u inst=%u caller=%s\n",
+             static_cast<unsigned>(address), static_cast<unsigned>(instance),
+             caller ? caller : "?");
 }
 
 bool receiver_session_active()
@@ -274,14 +339,8 @@ void note_0575_mounted()
     saw_0575_ms_ = to_ms_since_boot(get_absolute_time());
     receiver_state_ = GameSirCyclone2Transport::ReceiverState::ControllerOffline;
     last_transport_ = GameSirCyclone2Transport::Transport::UsbReceiver24Ghz;
-    OGXM_LOG("\n================================================\n");
-    OGXM_LOG("CYCLONE 2 2.4GHZ RECEIVER / HID 3537:0575\n");
-    OGXM_LOG("================================================\n");
-    OGXM_LOG("Receiver detected (or wired HID personality)\n");
-    OGXM_LOG("Controller radio link:\nOFFLINE / UNKNOWN\n");
-    OGXM_LOG("Note:\n3537:0575 alone does NOT prove an active gamepad\n");
-    OGXM_LOG("Note:\nNo PadIn mapping until controller-online personality\n");
-    OGXM_LOG("================================================\n");
+    arm_physical_affinity("3537:0575");
+    OGXM_LOG("[CYCLONE2 RXR] 0575 mounted (idle receiver or HID; no PadIn)\n");
 }
 
 void note_controller_personality_mounted(uint16_t vid, uint16_t pid)
@@ -332,65 +391,78 @@ void set_receiver_controller_online(bool online)
 void log_unified_banner(uint16_t vid, uint16_t pid, const char* bt_name,
                         bool input_active, const char* protocol_engine)
 {
+    (void)bt_name;
     using namespace GameSirCyclone2Transport;
-    const GameSirCyclone2Transport::Mode m = mode_from_vid_pid(vid, pid);
     const Transport t = infer_usb_transport(vid, pid);
-    OGXM_LOG("\n====================================================\n");
-    OGXM_LOG("GAMESIR CYCLONE 2\n");
-    OGXM_LOG("====================================================\n");
-    OGXM_LOG("Physical driver:\nGAMESIR_CYCLONE2\n");
-    OGXM_LOG("Transport:\n%s\n", transport_name(t));
-    OGXM_LOG("Mode:\n%s\n", GameSirCyclone2Transport::mode_name(m));
-    OGXM_LOG("Identity:\nVID=%04X\nPID=%04X\n", vid, pid);
-    OGXM_LOG("Bluetooth name:\n%s\n", bt_name && bt_name[0] ? bt_name : "(n/a)");
-    OGXM_LOG("Receiver present:\n%s\n",
-             (t == Transport::UsbReceiver24Ghz || saw_0575_) ? "YES" : "NO");
-    OGXM_LOG("Controller connected:\n%s\n",
-             input_active ? "YES" : "NO / WAITING");
-    OGXM_LOG("Receiver state:\n%s\n", receiver_state_name(receiver_state_));
-    OGXM_LOG("Protocol engine:\n%s\n",
-             protocol_engine ? protocol_engine : protocol_engine_name(m));
-    OGXM_LOG("Input:\n%s\n", input_active ? "ACTIVE" : "WAITING");
-    OGXM_LOG("====================================================\n");
+    OGXM_LOG("[CYCLONE2 RXR] %04X:%04X transport=%s mode=%s input=%s engine=%s\n",
+             vid, pid, transport_name(t), mode_name(infer_mode(vid, pid)),
+             input_active ? "ACTIVE" : "WAIT",
+             protocol_engine ? protocol_engine : "?");
 }
 
 void on_bus_attach(uint8_t rhport)
 {
+    on_bus_attach(rhport, false);
+}
+
+void on_bus_attach(uint8_t rhport, bool in_isr)
+{
     const uint32_t now = to_ms_since_boot(get_absolute_time());
-    /* Physical unplug gap: mode-switch reattach is typically <1s; clear session after longer gap. */
-    constexpr uint32_t kSessionClearGapMs = 2000;
-    if ((saw_cyclone_xinput_ || saw_0575_) && last_detach_ms_ != 0 &&
-        (now - last_detach_ms_) >= kSessionClearGapMs) {
-        saw_cyclone_xinput_ = false;
-        cyclone_xinput_seen_ms_ = 0;
-        saw_0575_ = false;
-        saw_0575_ms_ = 0;
-        receiver_state_ = GameSirCyclone2Transport::ReceiverState::None;
-        last_transport_ = GameSirCyclone2Transport::Transport::Unknown;
-        OGXM_LOG("[CYCLONE2] session cleared after %lums cable gap\n",
-                 static_cast<unsigned long>(now - last_detach_ms_));
+    /* Mode-switch reattach is often <1s; receiver personality changes can be slower. */
+    constexpr uint32_t kXinputSessionClearGapMs = 2000;
+    constexpr uint32_t kReceiverAffinityClearGapMs = 15000;
+    if (last_detach_ms_ != 0) {
+        const uint32_t gap = now - last_detach_ms_;
+        if (saw_cyclone_xinput_ && gap >= kXinputSessionClearGapMs) {
+            saw_cyclone_xinput_ = false;
+            cyclone_xinput_seen_ms_ = 0;
+        }
+        if ((saw_0575_ || physical_affinity_) && gap >= kReceiverAffinityClearGapMs) {
+            saw_0575_ = false;
+            saw_0575_ms_ = 0;
+            physical_affinity_ = false;
+            cached_bcd_ = 0;
+            receiver_state_ = GameSirCyclone2Transport::ReceiverState::None;
+            last_transport_ = GameSirCyclone2Transport::Transport::Unknown;
+        }
     }
-    if (cable_attach_ms_ == 0)
+    if (cable_attach_ms_ == 0) {
         cable_attach_ms_ = now;
-    OGXM_LOG("\n[USB ATTACH] t=%lums rhport=%u\n",
+    }
+    /* ISR path: RAM timestamps only — OGXM_LOG uses mutex_enter_blocking (unsafe in IRQ). */
+    if (in_isr) {
+        return;
+    }
+    OGXM_LOG("[CYCLONE2 RXR] attach t=%lums rhport=%u\n",
              static_cast<unsigned long>(now), static_cast<unsigned>(rhport));
-    OGXM_LOG("[CYCLONE2 MODE TRACE] Cable attach (relative 0 ms if first)\n");
 }
 
 void on_bus_remove(uint8_t rhport)
 {
+    on_bus_remove(rhport, false);
+}
+
+void on_bus_remove(uint8_t rhport, bool in_isr)
+{
     const uint32_t now = to_ms_since_boot(get_absolute_time());
     last_detach_ms_ = now;
-    OGXM_LOG("\n[USB DETACH] t=%lums rhport=%u\n",
-             static_cast<unsigned long>(now), static_cast<unsigned>(rhport));
-    if (prev_vid_ || prev_pid_) {
-        OGXM_LOG("previous VID/PID=%04X:%04X mode=%s\n",
-                 prev_vid_, prev_pid_, mode_name(prev_mode_));
+    last_detach_rhport_ = rhport;
+    last_detach_vid_ = prev_vid_;
+    last_detach_pid_ = prev_pid_;
+    last_detach_had_affinity_ = (saw_0575_ || physical_affinity_ || saw_cyclone_xinput_);
+    /* Cyclone never requests root-port reset; personality remounts are normal. */
+    cyclone_root_reset_requested_ = false;
+
+    if (in_isr) {
+        return;
     }
-    if (saw_cyclone_xinput_ && cyclone_xinput_seen_ms_) {
-        OGXM_LOG("[CYCLONE2 MODE TRACE] USB detach %lums after first 3537 XInput sighting\n",
-                 static_cast<unsigned long>(now - cyclone_xinput_seen_ms_));
-    }
+    OGXM_LOG("[USB DETACH] t=%lums rhport=%u addr=(bus) "
+             "prev=%04X:%04X affinity=%s root_reset_requested=NO "
+             "Cyclone_personality_transition=%s\n",
+             static_cast<unsigned long>(now), static_cast<unsigned>(rhport),
+             last_detach_vid_, last_detach_pid_,
+             last_detach_had_affinity_ ? "YES" : "NO",
+             last_detach_had_affinity_ ? "YES" : "NO");
 }
 
 void on_device_configured(uint8_t address)
@@ -398,118 +470,47 @@ void on_device_configured(uint8_t address)
     const uint32_t now = to_ms_since_boot(get_absolute_time());
     ++enum_seq_;
 
-    tusb_desc_device_t desc{};
-    if (tuh_descriptor_get_device_sync(address, &desc, sizeof(desc)) != XFER_RESULT_SUCCESS) {
-        OGXM_LOG("\n[USB ENUM #%lu] t=%lums addr=%u device descriptor FAILED\n",
-                 static_cast<unsigned long>(enum_seq_), static_cast<unsigned long>(now),
-                 static_cast<unsigned>(address));
+    /* No *_sync here — mount callback re-entering control xfer nests tuh_task and hangs boot. */
+    uint16_t vid = 0, pid = 0;
+    (void)tuh_vid_pid_get(address, &vid, &pid);
+    const Mode mode = infer_mode(vid, pid);
+
+    /*
+     * Cyclone receiver tracing must not run for unrelated pads (e.g. Victrix Gambit 0E6F:0250).
+     * Only GameSir VID family, or an already-armed Cyclone affinity/session, continue.
+     */
+    const bool gamesir_family = (vid == kGameSirVid);
+    const bool cyclone_session = (saw_0575_ || physical_affinity_ || saw_cyclone_xinput_);
+    if (!gamesir_family && !cyclone_session)
+    {
         return;
     }
 
-    const uint16_t vid = tu_le16toh(desc.idVendor);
-    const uint16_t pid = tu_le16toh(desc.idProduct);
-    const uint16_t bcd = tu_le16toh(desc.bcdDevice);
-    const Mode mode = infer_mode(vid, pid);
-
-    char mfg[48]{};
-    char product[48]{};
-    char serial[48]{};
-    fetch_string(address, desc.iManufacturer, mfg, sizeof(mfg));
-    fetch_string(address, desc.iProduct, product, sizeof(product));
-    fetch_string(address, desc.iSerialNumber, serial, sizeof(serial));
-
-    const uint32_t rel = cable_attach_ms_ ? (now - cable_attach_ms_) : 0;
-
-    OGXM_LOG("\n================================================\n");
-    OGXM_LOG("[USB ENUM #%lu]\n", static_cast<unsigned long>(enum_seq_));
-    OGXM_LOG("================================================\n");
-    OGXM_LOG("t=%lums (cable+%lums)\n", static_cast<unsigned long>(now),
-             static_cast<unsigned long>(rel));
-    OGXM_LOG("addr=%u\n", static_cast<unsigned>(address));
-    OGXM_LOG("\n");
-    OGXM_LOG("VID=%04X\n", vid);
-    OGXM_LOG("PID=%04X\n", pid);
-    OGXM_LOG("bcdDevice=%04X\n", bcd);
-    OGXM_LOG("\n");
-    OGXM_LOG("Manufacturer=\"%s\"\n", mfg);
-    OGXM_LOG("Product=\"%s\"\n", product);
-    OGXM_LOG("Serial=\"%s\"\n", serial);
-    OGXM_LOG("\n");
-    OGXM_LOG("Device class=0x%02X subclass=0x%02X protocol=0x%02X\n",
-             desc.bDeviceClass, desc.bDeviceSubClass, desc.bDeviceProtocol);
-    OGXM_LOG("Configuration count=%u\n", desc.bNumConfigurations);
-    OGXM_LOG("\n");
-    OGXM_LOG("Cyclone2 XInput candidate: %s\n", is_xinput_candidate(vid, pid) ? "YES" : "NO");
-    OGXM_LOG("Mode inferred: %s\n", mode_name(mode));
-    OGXM_LOG("Home LED expected: %s\n", led_expected(mode));
-
     if (is_xinput_candidate(vid, pid)) {
-        if (!saw_cyclone_xinput_) {
-            saw_cyclone_xinput_ = true;
-            cyclone_xinput_seen_ms_ = now;
-            OGXM_LOG("\n[CYCLONE2 MODE TRACE] 3537 XInput detected at cable+%lums\n",
-                     static_cast<unsigned long>(rel));
-        }
+        saw_cyclone_xinput_ = true;
+        cyclone_xinput_seen_ms_ = now;
+        arm_physical_affinity("XInput enum");
+    }
+    if (vid == kGameSirVid && pid == 0x0575) {
+        saw_0575_ = true;
+        saw_0575_ms_ = now;
+        arm_physical_affinity("0575 enum");
+        last_transport_ = GameSirCyclone2Transport::Transport::UsbReceiver24Ghz;
     }
 
-    if (saw_cyclone_xinput_ && mode == Mode::Switch) {
-        OGXM_LOG("\n================================================\n");
-        OGXM_LOG("CYCLONE 2 RESET / RE-ENUMERATION TRACE\n");
-        OGXM_LOG("================================================\n");
-        OGXM_LOG("OLD:\n");
-        OGXM_LOG("VID:\n%04X\n", prev_vid_ ? prev_vid_ : 0x3537);
-        OGXM_LOG("PID:\n%04X\n", prev_pid_ ? prev_pid_ : 0x100B);
-        OGXM_LOG("mode:\n%s\n", mode_name(prev_mode_ != Mode::Unknown ? prev_mode_ : Mode::XInput));
-        OGXM_LOG("session affinity:\nYES\n");
-        OGXM_LOG("\n--- re-enumeration / personality change ---\n\n");
-        OGXM_LOG("NEW:\n");
-        OGXM_LOG("VID:\n%04X\n", vid);
-        OGXM_LOG("PID:\n%04X\n", pid);
-        OGXM_LOG("mode:\nSWITCH\n");
-        OGXM_LOG("session affinity:\nYES (Cyclone will own NS; protocol=SWITCH_PRO_STANDARD)\n");
-        OGXM_LOG("Expected physical driver:\nGAMESIR_CYCLONE2\n");
-        OGXM_LOG("Expected protocol engine:\nSWITCH_PRO_STANDARD\n");
-        OGXM_LOG("================================================\n");
-        OGXM_LOG("\n*** CYCLONE 2 CHANGED USB PERSONALITY ***\n");
-        OGXM_LOG("[CYCLONE2 MODE CHANGE]\n");
-        OGXM_LOG("OLD: %04X:%04X %s %s\n",
-                 prev_vid_ ? prev_vid_ : 0x3537, prev_pid_ ? prev_pid_ : 0x100B,
-                 mode_name(prev_mode_ != Mode::Unknown ? prev_mode_ : Mode::XInput),
-                 led_expected(prev_mode_ != Mode::Unknown ? prev_mode_ : Mode::XInput));
-        OGXM_LOG("NEW: %04X:%04X %s %s\n", vid, pid, mode_name(mode), led_expected(mode));
-        if (cyclone_xinput_seen_ms_) {
-            OGXM_LOG("Fallback delay: ~%lums after first XInput sighting\n",
-                     static_cast<unsigned long>(now - cyclone_xinput_seen_ms_));
-        }
-        if (last_detach_ms_) {
-            OGXM_LOG("Re-attach gap after detach: %lums\n",
-                     static_cast<unsigned long>(now - last_detach_ms_));
-        }
-        OGXM_LOG("Session affinity: Cyclone physical ownership; shared SwitchProHost protocol.\n");
-    } else if (mode == Mode::Switch && !saw_cyclone_xinput_) {
-        OGXM_LOG("\n================================================\n");
-        OGXM_LOG("CYCLONE 2 RESET / RE-ENUMERATION TRACE\n");
-        OGXM_LOG("================================================\n");
-        OGXM_LOG("OLD:\n(session affinity clear or cold Switch plug)\n");
-        OGXM_LOG("session affinity:\nNO\n");
-        OGXM_LOG("\n--- mount ---\n\n");
-        OGXM_LOG("NEW:\n");
-        OGXM_LOG("VID:\n%04X\n", vid);
-        OGXM_LOG("PID:\n%04X\n", pid);
-        OGXM_LOG("session affinity:\nNO\n");
-        OGXM_LOG("Expected path:\nSWITCH_PRO (or Cyclone if NS fingerprint matches)\n");
-        OGXM_LOG("================================================\n");
-    }
+    OGXM_LOG("[CYCLONE2 RXR] enum #%lu addr=%u %04X:%04X mode=%s affinity=%s\n",
+             static_cast<unsigned long>(enum_seq_), static_cast<unsigned>(address),
+             vid, pid, mode_name(mode),
+             (saw_0575_ || physical_affinity_ || saw_cyclone_xinput_) ? "YES" : "NO");
 
-    /* Non-Cyclone personality after a long gap clears sticky if somehow still set. */
-    if (saw_cyclone_xinput_ && mode == Mode::Unknown) {
+    if ((saw_cyclone_xinput_ || physical_affinity_) && mode == Mode::Unknown) {
         saw_cyclone_xinput_ = false;
         cyclone_xinput_seen_ms_ = 0;
-        OGXM_LOG("[CYCLONE2] session cleared — non-Cyclone device enumerated\n");
+        physical_affinity_ = false;
+        saw_0575_ = false;
+        saw_0575_ms_ = 0;
+        cached_bcd_ = 0;
     }
-
-    dump_interfaces_brief(address);
-    OGXM_LOG("================================================\n\n");
 
     prev_vid_ = vid;
     prev_pid_ = pid;
@@ -518,10 +519,26 @@ void on_device_configured(uint8_t address)
 
 void on_device_unmounted(uint8_t address)
 {
+    uint16_t vid = 0, pid = 0;
+    (void)tuh_vid_pid_get(address, &vid, &pid);
+    const bool gamesir_family = (vid == kGameSirVid);
+    const bool cyclone_session = (saw_0575_ || physical_affinity_ || saw_cyclone_xinput_);
+    if (!gamesir_family && !cyclone_session &&
+        !(prev_vid_ == kGameSirVid || saw_0575_ || physical_affinity_))
+    {
+        if (hid_passive_safety_addr_ == address) {
+            set_hid_passive_safety(address, false);
+        }
+        return;
+    }
+
     const uint32_t now = to_ms_since_boot(get_absolute_time());
-    OGXM_LOG("\n[USB UNMOUNT] t=%lums addr=%u prev=%04X:%04X (%s)\n",
+    OGXM_LOG("[CYCLONE2 RXR] umount t=%lums addr=%u prev=%04X:%04X "
+             "root_reset_requested=%s personality_transition=%s\n",
              static_cast<unsigned long>(now), static_cast<unsigned>(address),
-             prev_vid_, prev_pid_, mode_name(prev_mode_));
+             prev_vid_, prev_pid_,
+             cyclone_root_reset_requested_ ? "YES" : "NO",
+             (saw_0575_ || physical_affinity_) ? "YES" : "NO");
     last_detach_ms_ = now;
     if (hid_passive_safety_addr_ == address) {
         set_hid_passive_safety(address, false);
@@ -533,6 +550,11 @@ void on_xinput_claimed(uint8_t address, uint8_t instance, uint8_t itf_num,
 {
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(address, &vid, &pid);
+    /* Only log for GameSir Cyclone XInput IDs — not every Xbox GIP pad. */
+    if (!is_xinput_candidate(vid, pid))
+    {
+        return;
+    }
     const uint32_t now = to_ms_since_boot(get_absolute_time());
     const uint32_t rel = cable_attach_ms_ ? (now - cable_attach_ms_) : 0;
 
@@ -587,6 +609,8 @@ void log_host_ctrl(uint8_t address, uint8_t bm_req, uint8_t b_req,
 namespace GameSirCyclone2Trace {
 void on_bus_attach(uint8_t) {}
 void on_bus_remove(uint8_t) {}
+void on_bus_attach(uint8_t, bool) {}
+void on_bus_remove(uint8_t, bool) {}
 void on_device_configured(uint8_t) {}
 void on_device_unmounted(uint8_t) {}
 void on_xinput_claimed(uint8_t, uint8_t, uint8_t, uint8_t, uint8_t) {}
@@ -601,6 +625,7 @@ bool cyclone_session_active() { return false; }
 void note_cyclone_xinput_seen() {}
 bool should_own_switch_ns(uint16_t, uint16_t) { return false; }
 bool looks_like_cyclone_switch_ns(uint8_t, uint16_t, uint16_t) { return false; }
+void log_switch_driver_selection_banner(uint8_t, uint16_t, uint16_t) {}
 bool should_own_ds4(uint16_t, uint16_t) { return false; }
 bool should_own_hid_passive(uint16_t, uint16_t) { return false; }
 void set_hid_passive_safety(uint8_t, bool) {}
@@ -620,3 +645,16 @@ void log_unified_banner(uint16_t, uint16_t, const char*, bool, const char*) {}
 } // namespace GameSirCyclone2Trace
 
 #endif // CONFIG_OGXM_DEBUG
+
+/* Always linked — XInput final face-swap gate (not debug-only). */
+namespace GameSirCyclone2Trace {
+namespace {
+volatile bool g_cyclone_switch_input_active = false;
+}
+void set_cyclone_switch_input_active(bool active) {
+    g_cyclone_switch_input_active = active;
+}
+bool cyclone_switch_input_active() {
+    return g_cyclone_switch_input_active;
+}
+} // namespace GameSirCyclone2Trace

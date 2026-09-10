@@ -12,10 +12,6 @@
 #include "Board/ogxm_log.h"
 #include "pico/time.h"
 
-#if defined(CONFIG_EN_USB_HOST)
-#include "pio_usb.h"
-#endif
-
 void Cyclone2Ds4Wired::reset() {
     ready_ = false;
     lightbar_sent_ = false;
@@ -33,20 +29,14 @@ void Cyclone2Ds4Wired::send_lightbar(uint8_t address, uint8_t instance) {
     out_.lightbar_red = 0;
     out_.lightbar_green = 0;
 
-    uint32_t attempts = 0;
-    while (!tuh_hid_send_report(address, instance, 0, reinterpret_cast<const uint8_t*>(&out_),
-                                sizeof(PS4::OutReport))) {
-#if defined(CONFIG_EN_USB_HOST)
-        pio_usb_host_frame();
-#endif
-        tuh_task();
-        if (++attempts > 4000u) {
-            OGXM_LOG("[CYCLONE2 DS4] enable lightbar sent: NO (timeout)\n");
-            return;
-        }
+    /* Non-blocking: one try only — never spin tuh_task() from mount/init. */
+    if (tuh_hid_send_report(address, instance, 0, reinterpret_cast<const uint8_t*>(&out_),
+                            sizeof(PS4::OutReport))) {
+        lightbar_sent_ = true;
+        OGXM_LOG("[CYCLONE2 DS4] lightbar queued\n");
+    } else {
+        OGXM_LOG("[CYCLONE2 DS4] lightbar deferred (EP busy)\n");
     }
-    lightbar_sent_ = true;
-    OGXM_LOG("[CYCLONE2 DS4] enable lightbar sent: YES\n");
 }
 
 void Cyclone2Ds4Wired::start(uint8_t address, uint8_t instance, uint8_t player_idx) {

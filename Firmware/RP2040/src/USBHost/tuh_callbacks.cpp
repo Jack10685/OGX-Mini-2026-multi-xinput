@@ -9,6 +9,7 @@
 #include "USBHost/HostManager.h"
 #include "OGXMini/OGXMini.h"
 #include "Board/ogxm_log.h"
+#include "USBHost/HostDriver/VictrixGambit/VictrixGambit.h"
 
 #if defined(CONFIG_OGXM_DEBUG)
 #include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2.h"
@@ -33,6 +34,7 @@ const char* host_type_name(HostDriverType t)
         case HostDriverType::N64: return "N64";
         case HostDriverType::FLYDIGI_APEX4_WUKONG: return "FLYDIGI_APEX4_WUKONG";
         case HostDriverType::GAMESIR_CYCLONE2: return "GAMESIR_CYCLONE2";
+        case HostDriverType::VICTRIX_GAMBIT: return "VICTRIX_GAMBIT";
         case HostDriverType::XBOXOG: return "XBOXOG";
         case HostDriverType::XBOXONE: return "XBOXONE";
         case HostDriverType::XBOX360W: return "XBOX360W";
@@ -47,30 +49,12 @@ void log_usb_driver_select(uint8_t address, uint8_t instance, HostManager::Drive
                            HostDriverType selected, uint16_t vid, uint16_t pid)
 {
     (void)address;
-    const bool cyclone_xinput = GameSirCyclone2Host::is_known_id(vid, pid);
-    const bool nintendo_switch_pro = (vid == 0x057E && pid == 0x2009);
-
-    OGXM_LOG("\n[USB DRIVER SELECT]\n");
-    OGXM_LOG("instance=%u path=%s VID=%04X PID=%04X\n",
+    OGXM_LOG("[USB DRIVER SELECT] inst=%u %s %04X:%04X → %s sess=%s recv=%s\n",
              static_cast<unsigned>(instance),
              dclass == HostManager::DriverClass::XINPUT ? "XINPUT" : "HID",
-             vid, pid);
-    OGXM_LOG("Cyclone2 XInput candidate: %s\n", cyclone_xinput ? "YES" : "NO");
-    OGXM_LOG("selected=%s\n", host_type_name(selected));
-    OGXM_LOG("session_affinity=%s\n",
-             GameSirCyclone2Trace::cyclone_session_active() ? "YES" : "NO");
-
-    if (nintendo_switch_pro && selected == HostDriverType::SWITCH_PRO) {
-        OGXM_LOG("NOTE: 057E:2009 → SWITCH_PRO (no Cyclone session/fingerprint)\n");
-    }
-    if (nintendo_switch_pro && selected == HostDriverType::GAMESIR_CYCLONE2) {
-        OGXM_LOG("Cyclone owns Switch NS — physical=GAMESIR_CYCLONE2\n");
-    }
-    if (cyclone_xinput && selected != HostDriverType::GAMESIR_CYCLONE2) {
-        OGXM_LOG("*** WRONG DRIVER SELECTION *** Cyclone XInput ID but selected=%s\n",
-                 host_type_name(selected));
-    }
-    OGXM_LOG("\n");
+             vid, pid, host_type_name(selected),
+             GameSirCyclone2Trace::cyclone_session_active() ? "Y" : "N",
+             GameSirCyclone2Trace::receiver_session_active() ? "Y" : "N");
 }
 
 } // namespace
@@ -82,13 +66,12 @@ usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count) {
 }
 
 #if defined(CONFIG_OGXM_DEBUG)
-/* Cyclone session / personality tracing only — no USB lifecycle / watchdog / boot changes. */
+/* Cyclone attach/remove hooks — ISR-safe; no mutex logging / no USB sync from ISR. */
 void tuh_event_hook_cb(uint8_t rhport, uint32_t eventid, bool in_isr) {
-    (void)in_isr;
     if (eventid == HCD_EVENT_DEVICE_ATTACH) {
-        GameSirCyclone2Trace::on_bus_attach(rhport);
+        GameSirCyclone2Trace::on_bus_attach(rhport, in_isr);
     } else if (eventid == HCD_EVENT_DEVICE_REMOVE) {
-        GameSirCyclone2Trace::on_bus_remove(rhport);
+        GameSirCyclone2Trace::on_bus_remove(rhport, in_isr);
     }
 }
 
@@ -111,7 +94,9 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
     HostDriverType host_type = HostManager::get_type({ vid, pid });
 
 #if defined(CONFIG_OGXM_DEBUG)
-    /* Session affinity + NS fingerprint (Gamepad / bcd 0x0326) — not global 057E:2009 claim. */
+    /* Session affinity + multi-presentation NS fingerprints (not global 057E:2009).
+     * A: Gamepad / bcd 0x0326. B: Pro Controller / bcd 0x0116.
+     * Dongle: sticky receiver affinity keeps remounts on GAMESIR_CYCLONE2. */
     if (GameSirCyclone2Host::should_claim(dev_addr, vid, pid)) {
         host_type = HostDriverType::GAMESIR_CYCLONE2;
     }
@@ -143,15 +128,27 @@ void tuh_xinput::mount_cb(uint8_t dev_addr, uint8_t instance, const tuh_xinput::
     HostManager& host_manager = HostManager::get_instance();
     HostDriverType host_type = HostManager::get_type(interface->dev_type);
 
-#if defined(CONFIG_OGXM_DEBUG)
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
+    if (VictrixGambitHost::is_known_id(vid, pid)) {
+        host_type = HostDriverType::VICTRIX_GAMBIT;
+    }
+
+#if defined(CONFIG_OGXM_DEBUG)
     GameSirCyclone2Trace::on_xinput_claimed(dev_addr, instance, interface->itf_num,
                                             interface->ep_in, interface->ep_out);
     if (GameSirCyclone2Host::is_known_id(vid, pid)) {
         host_type = HostDriverType::GAMESIR_CYCLONE2;
     }
     log_usb_driver_select(dev_addr, instance, HostManager::DriverClass::XINPUT, host_type, vid, pid);
+    if (host_type == HostDriverType::VICTRIX_GAMBIT) {
+        OGXM_LOG("\n[USB DRIVER SELECT]\n");
+        OGXM_LOG("addr=%u\ninstance=%u\n\n", static_cast<unsigned>(dev_addr),
+                 static_cast<unsigned>(instance));
+        OGXM_LOG("VID=%04X\nPID=%04X\n\n", vid, pid);
+        OGXM_LOG("selected=VICTRIX_GAMBIT\n\n");
+        OGXM_LOG("protocol=XBOX_GIP\n\n");
+    }
 #endif
 
     if (host_manager.setup_driver(host_type, HostManager::DriverClass::XINPUT, dev_addr, instance)) {

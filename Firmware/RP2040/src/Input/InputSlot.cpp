@@ -10,10 +10,77 @@ namespace InputSlot {
 namespace {
 
 State s_slots[MAX_GAMEPADS]{};
-uint32_t s_last_rx_log_ms{0};
+
+uint32_t s_rx_count{0};
+uint32_t s_decode_count{0};
+uint32_t s_rearm_ok{0};
+uint32_t s_rearm_fail{0};
+uint32_t s_xinput_sent{0};
+uint32_t s_xinput_busy{0};
+uint32_t s_last_perf_ms{0};
 
 } // namespace
 
+void note_hid_rx() {
+    ++s_rx_count;
+}
+
+void note_decoded() {
+    ++s_decode_count;
+}
+
+void note_rearm(bool ok) {
+    if (ok) {
+        ++s_rearm_ok;
+    } else {
+        ++s_rearm_fail;
+    }
+}
+
+void note_xinput_sent() {
+    ++s_xinput_sent;
+}
+
+void note_xinput_busy() {
+    ++s_xinput_busy;
+}
+
+void poll_perf_log() {
+#if defined(CONFIG_OGXM_DEBUG)
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    if ((now - s_last_perf_ms) < 1000u) {
+        return;
+    }
+    s_last_perf_ms = now;
+    const uint32_t rx = s_rx_count;
+    const uint32_t dec = s_decode_count;
+    const uint32_t rok = s_rearm_ok;
+    const uint32_t rfail = s_rearm_fail;
+    const uint32_t sent = s_xinput_sent;
+    const uint32_t busy = s_xinput_busy;
+    s_rx_count = 0;
+    s_decode_count = 0;
+    s_rearm_ok = 0;
+    s_rearm_fail = 0;
+    s_xinput_sent = 0;
+    s_xinput_busy = 0;
+    if (rx == 0 && dec == 0 && sent == 0 && busy == 0 && rfail == 0) {
+        return;
+    }
+    printf("\n[INPUT PERF]\nswitch_rx=%lu\ndecoded=%lu\nrearm_ok=%lu\nrearm_fail=%lu\n"
+           "xinput_sent=%lu\nxinput_busy=%lu\n",
+           static_cast<unsigned long>(rx), static_cast<unsigned long>(dec),
+           static_cast<unsigned long>(rok), static_cast<unsigned long>(rfail),
+           static_cast<unsigned long>(sent), static_cast<unsigned long>(busy));
+#else
+    s_rx_count = 0;
+    s_decode_count = 0;
+    s_rearm_ok = 0;
+    s_rearm_fail = 0;
+    s_xinput_sent = 0;
+    s_xinput_busy = 0;
+#endif
+}
 const char* transport_name(InputTransport t) {
     switch (t) {
         case InputTransport::USB: return "USB";
@@ -41,11 +108,15 @@ const char* driver_name(HostDriverType t) {
         case HostDriverType::N64: return "N64";
         case HostDriverType::PSCLASSIC: return "PSCLASSIC";
         case HostDriverType::FLYDIGI_APEX4_WUKONG: return "FLYDIGI_APEX4_WUKONG";
+        case HostDriverType::VICTRIX_GAMBIT: return "VICTRIX_GAMBIT";
         default: return "UNKNOWN";
     }
 }
 
 const char* protocol_for_ids(HostDriverType physical, uint16_t vid, uint16_t pid) {
+    if (physical == HostDriverType::VICTRIX_GAMBIT) {
+        return "XBOX_GIP";
+    }
     if (physical == HostDriverType::GAMESIR_CYCLONE2) {
         if (vid == 0x057E && pid == 0x2009) {
             return "SWITCH_PRO_STANDARD";
@@ -82,6 +153,13 @@ State get(uint8_t slot) {
     return s_slots[slot];
 }
 
+bool usb_owns(uint8_t slot) {
+    if (slot >= MAX_GAMEPADS) {
+        return false;
+    }
+    return s_slots[slot].transport == InputTransport::USB;
+}
+
 void clear(uint8_t slot, const char* reason) {
     if (slot >= MAX_GAMEPADS) {
         return;
@@ -91,9 +169,10 @@ void clear(uint8_t slot, const char* reason) {
         return;
     }
 #if defined(CONFIG_OGXM_DEBUG)
-    printf("\n[SLOT STATE CHANGE]\nslot=%u\nold=%s\nnew=NONE\ncaller=%s\nreason=%s\n",
+    printf("\n[SLOT STATE CHANGE]\nslot=%u\nold_transport=%s\nnew_transport=NONE\n"
+           "old_driver=%s\nnew_driver=NONE\ncaller=%s\nreason=%s\n",
            static_cast<unsigned>(slot), transport_name(st.transport),
-           reason ? reason : "?", reason ? reason : "?");
+           driver_name(st.physical_driver), reason ? reason : "?", reason ? reason : "?");
 #endif
     st = {};
 }
@@ -103,7 +182,7 @@ void bind_usb(uint8_t slot, uint8_t usb_addr, uint8_t usb_instance,
               const char* caller) {
     if (slot >= MAX_GAMEPADS) {
 #if defined(CONFIG_OGXM_DEBUG)
-        printf("\n[USB SLOT BIND]\nFAILED: slot=%u out of range (MAX_GAMEPADS=%u)\n",
+        printf("\n[USB SLOT BIND]\n[USB SLOT BIND] FAILED: slot=%u out of range (MAX_GAMEPADS=%u)\n",
                static_cast<unsigned>(slot), static_cast<unsigned>(MAX_GAMEPADS));
 #endif
         return;
@@ -111,7 +190,14 @@ void bind_usb(uint8_t slot, uint8_t usb_addr, uint8_t usb_instance,
 
     State& st = s_slots[slot];
     const InputTransport old = st.transport;
+    const HostDriverType old_driver = st.physical_driver;
     const char* protocol = protocol_for_ids(physical, vid, pid);
+    const char* mode =
+        (physical == HostDriverType::VICTRIX_GAMBIT || physical == HostDriverType::XBOXONE ||
+         physical == HostDriverType::XBOX360 || physical == HostDriverType::XBOX360W ||
+         physical == HostDriverType::XBOXOG)
+            ? "XINPUT"
+            : protocol;
 
 #if defined(CONFIG_OGXM_DEBUG)
     printf("\n[USB SLOT BIND]\n");
@@ -141,15 +227,17 @@ void bind_usb(uint8_t slot, uint8_t usb_addr, uint8_t usb_instance,
     st.protocol = protocol;
 
 #if defined(CONFIG_OGXM_DEBUG)
-    if (old != InputTransport::USB) {
-        printf("\n[SLOT STATE CHANGE]\nslot=%u\nold=%s\nnew=USB\ncaller=%s\n",
+    if (old != InputTransport::USB || old_driver != physical) {
+        printf("\n[SLOT STATE CHANGE]\nslot=%u\nold_transport=%s\nnew_transport=USB\n"
+               "old_driver=%s\nnew_driver=%s\ncaller=%s\nreason=usb_bind\n",
                static_cast<unsigned>(slot), transport_name(old),
+               driver_name(old_driver), driver_name(physical),
                caller ? caller : "HostManager::setup_driver");
     }
     printf("binding SUCCESS\n");
     printf("\n[INPUT SLOT %u]\ntransport=USB\ndriver=%s\nmode=%s\nprotocol_engine=%s\naddr=%u\ninstance=%u\n",
-           static_cast<unsigned>(slot), driver_name(physical), protocol,
-           protocol, static_cast<unsigned>(usb_addr), static_cast<unsigned>(usb_instance));
+           static_cast<unsigned>(slot), driver_name(physical), mode, protocol,
+           static_cast<unsigned>(usb_addr), static_cast<unsigned>(usb_instance));
     for (uint8_t i = 0; i < MAX_GAMEPADS; ++i) {
         if (i == slot) {
             continue;
@@ -159,6 +247,7 @@ void bind_usb(uint8_t slot, uint8_t usb_addr, uint8_t usb_instance,
     }
 #else
     (void)old;
+    (void)old_driver;
     (void)caller;
 #endif
 }
@@ -184,34 +273,14 @@ void log_all(const char* context) {
 
 void log_hid_rx_route(uint8_t usb_addr, uint8_t usb_instance, uint8_t report_id, uint16_t len,
                       uint8_t owning_slot, HostDriverType physical) {
-#if defined(CONFIG_OGXM_DEBUG)
-    const uint32_t now = to_ms_since_boot(get_absolute_time());
-    if ((now - s_last_rx_log_ms) < 200) {
-        return;
-    }
-    s_last_rx_log_ms = now;
-
-    printf("\n[USB HID RX ROUTE]\naddr=%u\ninstance=%u\nreport_id=0x%02X\nlen=%u\n",
-           static_cast<unsigned>(usb_addr), static_cast<unsigned>(usb_instance),
-           report_id, static_cast<unsigned>(len));
-    printf("lookup owning slot...\n");
-    if (owning_slot >= MAX_GAMEPADS) {
-        printf("owner slot=NONE\n");
-        return;
-    }
-    const State& st = s_slots[owning_slot];
-    printf("owner slot=%u\ntransport=%s\ndriver=%s\nmode=%s\nrouting report...\n",
-           static_cast<unsigned>(owning_slot), transport_name(st.transport),
-           driver_name(physical != HostDriverType::UNKNOWN ? physical : st.physical_driver),
-           st.protocol ? st.protocol : "?");
-#else
+    /* Hot path: counters only — never multi-line printf at HID report rate. */
+    note_hid_rx();
     (void)usb_addr;
     (void)usb_instance;
     (void)report_id;
     (void)len;
     (void)owning_slot;
     (void)physical;
-#endif
 }
 
 } // namespace InputSlot

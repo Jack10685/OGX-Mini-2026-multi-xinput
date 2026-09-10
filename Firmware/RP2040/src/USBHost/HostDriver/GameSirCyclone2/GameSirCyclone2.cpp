@@ -230,59 +230,16 @@ bool GameSirCyclone2Host::is_vendor_hid_descriptor(const uint8_t* report_desc, u
 
 void GameSirCyclone2Host::dump_device_banner(uint8_t address, uint8_t instance,
                                               const uint8_t* report_desc, uint16_t desc_len) {
+    (void)report_desc;
+    (void)desc_len;
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(address, &vid, &pid);
-    tusb_desc_device_t desc{};
-    const uint8_t rc = tuh_descriptor_get_device_sync(address, &desc, sizeof(desc));
-    char manufacturer[48]{};
-    char product[48]{};
-    char serial[48]{};
-    uint16_t bcd = 0;
-
-    if (rc == XFER_RESULT_SUCCESS) {
-        bcd = tu_le16toh(desc.bcdDevice);
-        uint8_t str_buf[64]{};
-        if (desc.iManufacturer &&
-            tuh_descriptor_get_string_sync(address, desc.iManufacturer, 0x0409, str_buf, sizeof(str_buf)) == XFER_RESULT_SUCCESS) {
-            utf16_to_ascii(str_buf, sizeof(str_buf), manufacturer, sizeof(manufacturer));
-        }
-        if (desc.iProduct &&
-            tuh_descriptor_get_string_sync(address, desc.iProduct, 0x0409, str_buf, sizeof(str_buf)) == XFER_RESULT_SUCCESS) {
-            utf16_to_ascii(str_buf, sizeof(str_buf), product, sizeof(product));
-        }
-        if (desc.iSerialNumber &&
-            tuh_descriptor_get_string_sync(address, desc.iSerialNumber, 0x0409, str_buf, sizeof(str_buf)) == XFER_RESULT_SUCCESS) {
-            utf16_to_ascii(str_buf, sizeof(str_buf), serial, sizeof(serial));
-        }
-    }
-
-    OGXM_LOG("\n================================================\n");
-    if (personality_ == Personality::SwitchNs) {
-        OGXM_LOG("GAMESIR CYCLONE 2 — WIRED SWITCH / NS\n");
-    } else if (personality_ == Personality::Ds4) {
-        OGXM_LOG("GAMESIR CYCLONE 2 — WIRED DS4\n");
-    } else if (personality_ == Personality::HidPassive) {
-        OGXM_LOG("GAMESIR CYCLONE 2 — WIRED HID (PASSIVE)\n");
-    } else {
-        OGXM_LOG("GAMESIR CYCLONE 2 — WIRED XINPUT\n");
-    }
-    OGXM_LOG("================================================\n");
-    OGXM_LOG("VID: %04X\n", vid);
-    OGXM_LOG("PID: %04X\n", pid);
-    OGXM_LOG("bcdDevice: %04X\n", bcd);
-    OGXM_LOG("\nManufacturer: %s\n", manufacturer);
-    OGXM_LOG("Product: %s\n", product);
-    OGXM_LOG("Serial: %s\n", serial);
-    if (rc == XFER_RESULT_SUCCESS) {
-        OGXM_LOG("\nDevice class: 0x%02X\n", desc.bDeviceClass);
-        OGXM_LOG("Device subclass: 0x%02X\n", desc.bDeviceSubClass);
-        OGXM_LOG("Device protocol: 0x%02X\n", desc.bDeviceProtocol);
-    }
-    OGXM_LOG("\n");
-    dump_usb_tree(address);
+    /* Mount-path safe: no *_sync control transfers / hex dumps (nested tuh_task hang risk). */
+    OGXM_LOG("[CYCLONE2 RXR] mount addr=%u inst=%u %04X:%04X personality=%u desc_len=%u\n",
+             static_cast<unsigned>(address), static_cast<unsigned>(instance),
+             vid, pid, static_cast<unsigned>(personality_),
+             static_cast<unsigned>(desc_len));
     classify_and_log_interface(address, instance, report_desc, desc_len);
-    dump_hid_report_descriptor(report_desc, desc_len);
-    OGXM_LOG("================================================\n");
 }
 
 void GameSirCyclone2Host::log_raw_report(uint8_t address, uint8_t instance,
@@ -454,14 +411,10 @@ void GameSirCyclone2Host::initialize(Gamepad& gamepad, uint8_t address, uint8_t 
     }
 
     dump_device_banner(address, instance, report_desc, desc_len);
-    log_mode_status_banner(vid, pid);
 
     if (personality_ == Personality::HidPassive) {
-        /* Dedicated dump lives inside Cyclone2HidPassive — skip XInput/enhanced banners. */
         GameSirCyclone2Trace::note_0575_mounted();
         GameSirCyclone2Trace::log_unified_banner(vid, pid, nullptr, false, "HID_PASSIVE");
-        OGXM_LOG("[CYCLONE2] owning 3537:0575 — PASSIVE (idle receiver OR HID; no PadIn)\n");
-        OGXM_LOG("[CYCLONE2] vendor 0F F2 / rumble / LED / Switch / DS4 TX: BLOCKED\n");
         GameSirCyclone2Trace::set_hid_passive_safety(address, true);
         hid_passive_.start(address, instance, report_desc, desc_len);
         return;
@@ -470,24 +423,19 @@ void GameSirCyclone2Host::initialize(Gamepad& gamepad, uint8_t address, uint8_t 
     GameSirCyclone2Trace::note_controller_personality_mounted(vid, pid);
 
     if (personality_ == Personality::SwitchNs) {
+        GameSirCyclone2Trace::log_switch_driver_selection_banner(address, vid, pid);
         GameSirCyclone2Trace::log_unified_banner(vid, pid, nullptr, true, "SWITCH_PRO_STANDARD");
-        OGXM_LOG("[CYCLONE2] owning Switch NS (057E:2009) — physical=GAMESIR_CYCLONE2\n");
-        OGXM_LOG("[CYCLONE2] protocol engine=SWITCH_PRO_STANDARD (shared SwitchProHost)\n");
-        OGXM_LOG("[CYCLONE2] vendor 0F F2 heartbeat: DISABLED (XInput-only)\n");
         switch_wired_.start(gamepad, address, instance, report_desc, desc_len);
         return;
     }
 
     if (personality_ == Personality::Ds4) {
         GameSirCyclone2Trace::log_unified_banner(vid, pid, nullptr, true, "DS4");
-        OGXM_LOG("[CYCLONE2] owning DS4 via session affinity (054C:09CC)\n");
-        OGXM_LOG("[CYCLONE2] vendor 0F F2 heartbeat: DISABLED (XInput-only)\n");
         ds4_wired_.start(address, instance, idx_);
         return;
     }
 
     if (is_hid_path_) {
-        /* Composite XInput + vendor HID — heartbeat only on vendor usage page. */
         maybe_start_vendor_heartbeat(address, instance, report_desc, desc_len);
         tuh_hid_receive_report(address, instance);
         return;
@@ -495,14 +443,6 @@ void GameSirCyclone2Host::initialize(Gamepad& gamepad, uint8_t address, uint8_t 
 
     GameSirCyclone2Trace::log_unified_banner(vid, pid, nullptr, true, "XINPUT");
     GameSirCyclone2Trace::note_cyclone_xinput_seen();
-    OGXM_LOG("Standard XInput: WORKING\n");
-    OGXM_LOG("Dedicated driver: GAMESIR CYCLONE 2\n");
-    OGXM_LOG("Enhanced heartbeat: %s\n", heartbeat_enabled_ ? "ACTIVE" : "NOT STARTED");
-    OGXM_LOG("Report 0x12: %s\n", enhanced_report_seen_ ? "FOUND" : "NOT FOUND");
-    OGXM_LOG("Transport: %s\n",
-             GameSirCyclone2Transport::transport_name(
-                 GameSirCyclone2Trace::infer_usb_transport(vid, pid)));
-
     (void)tuh_xinput::set_led(address, instance, idx_ + 1, true);
     tuh_xinput::receive_report(address, instance);
 }

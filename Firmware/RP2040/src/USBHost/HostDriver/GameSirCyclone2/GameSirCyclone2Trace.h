@@ -24,6 +24,10 @@ enum class Mode : uint8_t {
 void on_bus_attach(uint8_t rhport);
 void on_bus_remove(uint8_t rhport);
 
+/** ISR-safe variants — no logging / no USB I/O when in_isr. */
+void on_bus_attach(uint8_t rhport, bool in_isr);
+void on_bus_remove(uint8_t rhport, bool in_isr);
+
 /** Called when a device finishes configuration (tuh_mount_cb). */
 void on_device_configured(uint8_t address);
 
@@ -59,14 +63,27 @@ bool cyclone_session_active();
 /** Mark sticky Cyclone XInput session (wired green mode). Call from dedicated host init. */
 void note_cyclone_xinput_seen();
 
-/** Claim Switch NS personality only when cyclone_session_active() and 057E:2009. */
+/**
+ * Claim Switch NS (057E:2009) when physical Cyclone affinity is sticky:
+ * prior XInput session and/or 2.4 GHz receiver (3537:0575) session.
+ * Does NOT globally claim all 057E:2009 devices.
+ */
 bool should_own_switch_ns(uint16_t vid, uint16_t pid);
 
 /**
- * Cyclone 2 red NS fingerprint (safe vs genuine Switch Pro Controller):
- * Product "Gamepad" and/or bcdDevice 0x0326. Used when HID mounts before session enum log.
+ * Cold-plug / remount Cyclone Switch fingerprint (never global VID/PID claim).
+ *
+ * Known presentations (observed hardware):
+ *   A) Product "Gamepad" and/or bcdDevice 0x0326
+ *   B) Product "Pro Controller" AND bcdDevice 0x0116
+ *      (genuine Nintendo Pro uses bcd ~0x0200/0x0210 — not claimed here)
+ *
+ * Also accepts 057E:2009 when receiver affinity is already sticky.
  */
 bool looks_like_cyclone_switch_ns(uint8_t address, uint16_t vid, uint16_t pid);
+
+/** One-shot mount banner for Cyclone Switch ownership (affinity or fingerprint). */
+void log_switch_driver_selection_banner(uint8_t address, uint16_t vid, uint16_t pid);
 
 /** Claim DS4 personality only when cyclone_session_active() and 054C:09CC. */
 bool should_own_ds4(uint16_t vid, uint16_t pid);
@@ -104,6 +121,14 @@ void note_controller_personality_mounted(uint16_t vid, uint16_t pid);
 /** Unified connection banner for every Cyclone 2 USB mount. */
 void log_unified_banner(uint16_t vid, uint16_t pid, const char* bt_name,
                         bool input_active, const char* protocol_engine);
+
+/**
+ * True while GAMESIR_CYCLONE2 Switch personality is active (USB or BT).
+ * XInput device uses this for a final A↔B / X↔Y face swap only.
+ * Always compiled (not debug-only).
+ */
+void set_cyclone_switch_input_active(bool active);
+bool cyclone_switch_input_active();
 
 } // namespace GameSirCyclone2Trace
 

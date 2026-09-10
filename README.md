@@ -50,7 +50,7 @@ Unofficial clones, random AliExpress spin-offs, or homebrew PCBs that only “lo
 |----------|----------------|
 | **Support & contributing** | [Support issue requirements](Firmware/RP2040/docs/Support_Issue_Requirements.md), [Building from source](Firmware/RP2040/docs/Building_From_Source.md), [Firmware architecture](Firmware/RP2040/docs/Firmware_Architecture.md), [Adding supported controllers](Firmware/RP2040/docs/Adding_Supported_Controllers.md), [Support policy](#support-policy) |
 | **Feature guides** | [SteamOS / Bazzite](Firmware/RP2040/docs/SteamOS_Bazzite_Output_Mode.md), [PS3/PS4 motion](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [Wii mode](Firmware/RP2040/docs/Wii_Mode_Guide.md), [GPIO pinouts](Firmware/RP2040/docs/GPIO_Output_Pinout_and_Mappings.md) |
-| **Reference** | [Wired controllers](Firmware/RP2040/docs/Wired_Controllers.md), [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md), [Controller mappings](Firmware/RP2040/docs/Controller_Mappings.md) |
+| **Reference** | [Wired controllers](Firmware/RP2040/docs/Wired_Controllers.md), [Victrix Gambit](Firmware/RP2040/docs/Victrix_Gambit.md), [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md), [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md), [Controller mappings](Firmware/RP2040/docs/Controller_Mappings.md) |
 | **Technical notes** | [Firmware architecture](Firmware/RP2040/docs/Firmware_Architecture.md), [Planned additions](Firmware/RP2040/docs/Planned_Additions.md), [IMPROVEMENTS.md](Firmware/RP2040/docs/IMPROVEMENTS.md), [CHANGELOG.md](CHANGELOG.md) |
 | **Research / planning** | [docs/](docs/README.md) (input research, retro wiring, other projects’ modes) |
 
@@ -145,6 +145,8 @@ See [**Wired Controllers**](Firmware/RP2040/docs/Wired_Controllers.md) for a ful
 - Generic DInput
 - Generic HID (mappings may need to be editted in the web app)
 - **Flydigi APEX 4 Elite — Black Myth: Wukong Edition** — **Wired USB / PC Mode: Supported**. Full mode matrix (Bluetooth Android / iOS / PC / Switch, 2.4 GHz untested): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md).
+- **GameSir Cyclone 2** — **Supported** wired (XInput / Switch / DS4), 2.4 GHz dongle (Switch / DS4 / Android/iOS), and direct Bluetooth (Switch / DS4 / Android/iOS; no BT XInput): [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md).
+- **Victrix Gambit Tournament Controller / Gambit Prime** — **Supported**, **wired USB only** (Xbox GIP, `0E6F:0250` physically verified). Press **Home / Xbox once** after connecting to wake the controller: [Victrix Gambit](Firmware/RP2040/docs/Victrix_Gambit.md).
 
 Note: Third-party controllers that change VID/PID by mode or batch may not work correctly and are **not** a focus for new support.
 
@@ -181,6 +183,8 @@ Full technical detail: **[Firmware/RP2040/docs/IMPROVEMENTS.md](Firmware/RP2040/
 
 **2.4 GHz USB dongle:** Untested — the wireless dongle was not available during implementation, so compatibility is currently unknown. Full matrix (including wired PC Mode): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md).
 
+**GameSir Cyclone 2 (Pico W / Pico 2 W / RP2354 BT):** Physically tested Bluetooth modes — **Switch**, **DS4**, and **Android/iOS** working. Direct Bluetooth XInput is not supported (use those input personalities and let OGX output Xbox 360 / XInput). Also supported over wired USB and the GameSir 2.4 GHz dongle. Full matrix: [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md).
+
 **First-party / regularly maintained (Bluetooth):**
 - Xbox Series, One, and Elite 2
 - Dualshock 3
@@ -189,6 +193,7 @@ Full technical detail: **[Firmware/RP2040/docs/IMPROVEMENTS.md](Firmware/RP2040/
 - Switch Pro
 - **Switch 2 Pro** and **Joy-Con 2 (L/R)** (BLE on Pico W / Pico 2 W / RP2354; wired USB also supported)
 - **Flydigi APEX 4 Black Myth: Wukong** (see mode table above)
+- **GameSir Cyclone 2** (see note above)
 - Wii U Pro
 - Wii Remote
    - Supported Extensions:
@@ -248,7 +253,7 @@ Community guide (VID/PID, report capture, new host drivers, button mapping, Debu
 
 **Architecture:** New controllers get a **dedicated driver** by default. Do **not** modify an existing working driver to add a different pad — see [dedicated drivers](Firmware/RP2040/docs/Adding_Supported_Controllers.md#architecture-requirement--dedicated-drivers-for-new-controllers).
 
-Maintainer policy for first-party / donated hardware: [Support policy](#support-policy). Wired pad lists: [Wired Controllers](Firmware/RP2040/docs/Wired_Controllers.md). Flydigi APEX 4 (wired + BT modes): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md).
+Maintainer policy for first-party / donated hardware: [Support policy](#support-policy). Wired pad lists: [Wired Controllers](Firmware/RP2040/docs/Wired_Controllers.md). Victrix Gambit (wired GIP): [Victrix Gambit](Firmware/RP2040/docs/Victrix_Gambit.md). Flydigi APEX 4 (wired + BT modes): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md). GameSir Cyclone 2 (wired + dongle + BT): [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md).
 
 ## Build
 
