@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 
 #include "pico/time.h"
 #include "tusb.h"
@@ -24,10 +25,12 @@ namespace {
 		VerifyReceived = 3, // 0x87 data received, pending xsm3_do_challenge_verify
 		Authenticated = 4,
 	};
-	static Xsm3AuthState xsm3_auth_state = Xsm3AuthState::Idle;
+	static volatile Xsm3AuthState xsm3_auth_state = Xsm3AuthState::Idle;
 	static uint8_t xsm3_buf_82[0x22];
 	static uint8_t xsm3_buf_87[0x16];
 	// joypad-os: state 1 = processing, state 2 = response ready
+	static uint8_t xsm3_state_buf[2] = { 0x01, 0x00 };
+
 	static constexpr uint8_t XSM3_STATE_PROCESSING = 1;
 	static constexpr uint8_t XSM3_STATE_READY = 2;
 	// joypad-os: init response is 46 bytes (0x2E), not full 0x30
@@ -295,9 +298,9 @@ bool XInputDevice::vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_co
 		{
 			uint8_t state_val = (xsm3_auth_state == Xsm3AuthState::Responded || xsm3_auth_state == Xsm3AuthState::Authenticated)
 				? XSM3_STATE_READY : XSM3_STATE_PROCESSING;
-			printf("XSM3: 0x86 GET_STATE %u\n", (unsigned)state_val);
-			uint8_t state_data[] = { state_val, 0x00 };
-			return tud_control_xfer(rhport, request, state_data, 2);
+			xsm3_state_buf[0] = state_val;
+			xsm3_state_buf[1] = 0x00;
+			return tud_control_xfer(rhport, request, xsm3_state_buf, 2);
 		}
 		return true;
 
