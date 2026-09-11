@@ -93,6 +93,7 @@ const char* transport_name(InputTransport t) {
 const char* driver_name(HostDriverType t) {
     switch (t) {
         case HostDriverType::GAMESIR_CYCLONE2: return "GAMESIR_CYCLONE2";
+        case HostDriverType::GAMESIR_G7_PRO: return "GAMESIR_G7_PRO";
         case HostDriverType::SWITCH_PRO: return "SWITCH_PRO";
         case HostDriverType::SWITCH_PRO_2: return "SWITCH_PRO_2";
         case HostDriverType::SWITCH: return "SWITCH";
@@ -116,6 +117,11 @@ const char* driver_name(HostDriverType t) {
 const char* protocol_for_ids(HostDriverType physical, uint16_t vid, uint16_t pid) {
     if (physical == HostDriverType::VICTRIX_GAMBIT) {
         return "XBOX_GIP";
+    }
+    if (physical == HostDriverType::GAMESIR_G7_PRO) {
+        (void)vid;
+        (void)pid;
+        return "GAMESIR_G7_PRO_HID";
     }
     if (physical == HostDriverType::GAMESIR_CYCLONE2) {
         if (vid == 0x057E && pid == 0x2009) {

@@ -162,6 +162,12 @@ btstack_timer_source_t led_timer_;
 bool led_timer_set_{false};
 bool feedback_timer_set_{false};
 
+/** Core0 USB mux may run before Core1 finishes uni_init(); BTstack asserts if
+ *  execute_on_main_thread is used with the_run_loop == NULL (boot loop with pad plugged). */
+static std::atomic<bool> s_btstack_run_loop_ready{false};
+/** Wired USB asked to silence BT before the stack was up — apply after init. */
+static std::atomic<bool> s_bt_quiet_for_usb_pending{false};
+
 static constexpr uint32_t GPIO_PROCESS_INTERVAL_MS = 4;
 static btstack_timer_source_t gpio_process_timer_;
 static void (*gpio_process_cb_)(void*) = nullptr;
@@ -1280,6 +1286,11 @@ void wired_usb_takeover_disconnect_bt() {
      * we do not treat BT as active and tuh_deinit() wired USB during the disconnect window. */
     s_bt_any_connected_cached.store(false, std::memory_order_release);
 #endif
+    s_bt_quiet_for_usb_pending.store(true, std::memory_order_release);
+    if (!s_btstack_run_loop_ready.load(std::memory_order_acquire)) {
+        /* Pad plugged during CYW43/uni_init — defer until run loop exists (avoids btstack_assert). */
+        return;
+    }
     for (uint8_t i = 0; i < CONFIG_BLUEPAD32_MAX_DEVICES; ++i) {
         uni_bt_disconnect_device_safe(i);
     }
@@ -1287,6 +1298,10 @@ void wired_usb_takeover_disconnect_bt() {
 }
 
 void wired_usb_release_enable_bt_pairing() {
+    s_bt_quiet_for_usb_pending.store(false, std::memory_order_release);
+    if (!s_btstack_run_loop_ready.load(std::memory_order_acquire)) {
+        return;
+    }
 #if defined(CONFIG_EN_BLUETOOTH) && defined(CONFIG_TARGET_PICO_W)
     s_usb_resume_bt_reg.callback = usb_resume_on_bt_main;
     s_usb_resume_bt_reg.context = nullptr;
@@ -1297,6 +1312,9 @@ void wired_usb_release_enable_bt_pairing() {
 }
 
 void on_usb_device_resume() {
+    if (!s_btstack_run_loop_ready.load(std::memory_order_acquire)) {
+        return;
+    }
 #if defined(CONFIG_EN_BLUETOOTH) && defined(CONFIG_TARGET_PICO_W)
     s_usb_resume_bt_reg.callback = usb_resume_on_bt_main;
     s_usb_resume_bt_reg.context = nullptr;
@@ -1345,6 +1363,15 @@ void init(Gamepad(&gamepads)[MAX_GAMEPADS])
 void run_task(Gamepad(&gamepads)[MAX_GAMEPADS])
 {
     init(gamepads);
+    /* uni_init has installed the run loop — safe for Core0 USB mux BT calls. */
+    s_btstack_run_loop_ready.store(true, std::memory_order_release);
+    if (s_bt_quiet_for_usb_pending.load(std::memory_order_acquire)) {
+        for (uint8_t i = 0; i < CONFIG_BLUEPAD32_MAX_DEVICES; ++i) {
+            uni_bt_disconnect_device_safe(i);
+        }
+        uni_bt_enable_new_connections_safe(false);
+        OGXM_LOG("BT: applied deferred USB quiet (pad was plugged during BT bring-up)\n");
+    }
     btstack_run_loop_execute();
 }
 

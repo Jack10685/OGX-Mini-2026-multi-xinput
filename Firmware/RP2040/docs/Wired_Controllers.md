@@ -12,6 +12,8 @@ This document lists controllers supported when connected to the OGX-Mini adapter
 
 - **Microsoft:** Xbox 360 (wired and **360 PC wireless receiver**), Xbox One / Series **wired USB**, Xbox Elite
 - **Not supported (planned):** Xbox One / Series **wireless USB dongle** (`045e:02e6`, `045e:02fe`) — see [Planned_Additions.md](Planned_Additions.md#xbox-wireless-adapter-for-windows-045e02e6-045e02fe)
+- **SCUF Instinct** — **Supported** wired USB (Xbox / XInput). **Bluetooth LE** on Pico W / Pico 2 W / RP2354 uses the same Xbox Series HOGP path (`045e:0b13`); see the main [README — Wireless Bluetooth](../../../README.md#wireless-bluetooth-controllers-pico-w--esp32).
+- **Razer Wolverine V3 Tournament Edition** — **Supported**, **wired USB only** (Xbox / XInput; no wireless on this model). Xbox-licensed TE commonly reports as Razer **`1532:0a43`** / **`1532:0a45`** (PC 8K variants differ, e.g. **`1532:0a5a`**).
 - **Third‑party:** Controllers that identify as XInput over USB (e.g. many 8BitDo, PowerA, PDP, Afterglow when in XInput mode)
 - **Victrix Gambit Tournament Controller / Gambit Prime** (`0E6F:0250` physically verified; `0E6F:02D6` externally documented only) — **Supported**, wired USB only, Xbox GIP, dedicated `VictrixGambitHost` (`VICTRIX_GAMBIT`). **Press Home/Xbox once after plugging in** to wake the controller (may stay dark until then — normal). See [Victrix_Gambit.md](Victrix_Gambit.md).
 - **Razer Atrox Arcade Stick:** **Xbox One** (`1532:0a00`, vendor GIP); **Xbox 360** (`24c6:5000`, standard XInput, digital LT/RT)
@@ -116,16 +118,17 @@ Controllers that use the standard HID gamepad (DInput) protocol, including:
 - **Mad Catz:** Fightsticks, Fightpad, CTRLR, etc.
 - **Qanba, Mayflash, Brook:** Arcade sticks and adapters
 - **PowerA, PDP, Afterglow:** Various Xbox/PC controllers in HID mode
-- **GameSir:** G3, G4, T3, T4, G7 Pro, etc.
-- **Razer:** Kishi, Hydra, Serval, Raiju (PC/HID)
+- **GameSir:** G3, G4, T3, T4, etc. (**G7 Pro** has a dedicated host — see below)
+- **Razer:** Kishi, Hydra, Serval, Raiju (PC/HID); **Wolverine V3 Tournament Edition** — wired Xbox / XInput (see XInput section above)
 - **Steam:** Steam Controller, Steam Deck (when presenting as gamepad). **Steam Controller 2026** body USB is **`28de:1302`** (generic HID if supported by the host stack). **Wireless BLE** (`28de:1303`) on Pico W / Pico 2 W / RP2354 is documented in [IMPROVEMENTS — Steam Controller 2026](IMPROVEMENTS.md#steam-controller-2026-triton--bluetooth).
 - **Sony:** DualShock 2 (via USB adapter), Steam Virtual Gamepad
 - **GameSir:**
   - **Cyclone 2** — **Supported** over wired USB (XInput / Switch / DS4), GameSir 2.4 GHz dongle (Switch / DS4 / Android/iOS), and direct Bluetooth (Switch / DS4 / Android/iOS). Dedicated host (`GameSirCyclone2Host`). Wired XInput IDs `3537:100B`/`1053`; Switch may present as `057E:2009` (do not patch SwitchProHost for Cyclone-only quirks). Full matrix: [GameSir_Cyclone2.md](GameSir_Cyclone2.md).
+  - **G7 Pro** (`3537:1022`) — **Supported** wired HID via dedicated `GameSirG7ProHost` (9-byte report: buttons/hat/sticks/triggers; skips vendor `0xFFF0` IF). Prefer **PC / XInput** or this HID mode on the adapter. **Press Home once after plugging in USB** so the controller finishes connecting properly. **Bluetooth:** dedicated `GameSirG7ProBt` path — claim by name `GameSir-G7 Pro` (SDP often times out), Report ID `0x07` HID layout. See [GameSir_G7Pro.md](GameSir_G7Pro.md).
 - **Flydigi:**
   - **Vader 4 Pro** (DInput mode)
   - **APEX 4 Elite — Black Myth: Wukong Edition** — **Wired USB / PC Mode: Supported** (everything tested working). Dedicated host path (`FlydigiApex4WukongHost`). Full wired + Bluetooth mode matrix (Android / iOS / PC / Switch limitations, 2.4 GHz untested): [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md).
-- **Scuf:** Envision (Linux/HID)
+- **Scuf:** **Instinct** (wired Xbox / XInput; **BLE** on Pico W / Pico 2 W / RP2354 — Xbox Series HOGP). Envision (Linux/HID)
 - **Elecom:** Various gamepads and adapters
 - **Other:** ThrustMaster, BigBen, Capcom Home Arcade, Cthulhu, XinMo, Zenaim, Datel, and other generic DInput/HID gamepads and arcade sticks
 

@@ -144,7 +144,9 @@
 #if defined(CONFIG_EN_4CH)
 #define CFG_TUH_HID             1
 #else
-#define CFG_TUH_HID             MAX_GAMEPADS
+/* Gamepads + spare composite HID IFs (vendor/config, kb/mouse). GameSir G7 Pro
+ * exposes gamepad + 0xFFF0 — CFG_TUH_HID==MAX_GAMEPADS alone asserts on IF1. */
+#define CFG_TUH_HID             (MAX_GAMEPADS + 3)
 #endif
 
 #define CFG_TUH_MSC             0

@@ -75,14 +75,16 @@ void usb::disconnect_all() {
 
     TaskQueue::suspend_delayed_tasks();
 #if defined(CONFIG_EN_USB_HOST)
-    if (board_api_usbh::stop_pio_usb_host) {
-        board_api_usbh::stop_pio_usb_host();
-    } else {
-        multicore_reset_core1();
-    }
-#else
-    multicore_reset_core1();
+    /*
+     * stop_pio_usb_host may be a weak empty stub (default) or a strong board
+     * override (Standard / PicoW). Do NOT use `if (stop_pio_usb_host)` — a weak
+     * stub still has a non-null address, so Core1 was never reset on Pico W/2W
+     * and NVS flash during mode switch hung under live BT/XIP.
+     */
+    board_api_usbh::stop_pio_usb_host();
 #endif
+    /* Always halt Core1 before flash/reboot (BT / host / GPIO simulators). */
+    multicore_reset_core1();
     sleep_ms(500);
     tud_disconnect();
     sleep_ms(500);

@@ -41,6 +41,7 @@
 #include "USBHost/HostDriver/N64/N64.h"
 #include "USBHost/HostDriver/HIDGeneric/HIDGeneric.h"
 #include "USBHost/HostDriver/VictrixGambit/VictrixGambit.h"
+#include "USBHost/HostDriver/GameSirG7Pro/GameSirG7Pro.h"
 #if defined(CONFIG_OGXM_DEBUG)
 #include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4Wukong.h"
 #include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2.h"
@@ -173,6 +174,7 @@ public:
 				case HostDriverType::SWITCH_PRO_2: type_name = "SWITCH_PRO_2"; break;
 				case HostDriverType::SWITCH: type_name = "SWITCH"; break;
 				case HostDriverType::GAMESIR_CYCLONE2: type_name = "GAMESIR_CYCLONE2"; break;
+				case HostDriverType::GAMESIR_G7_PRO: type_name = "GAMESIR_G7_PRO"; break;
 				case HostDriverType::VICTRIX_GAMBIT: type_name = "VICTRIX_GAMBIT"; break;
 				case HostDriverType::XBOX360: type_name = "XBOX360"; break;
 				case HostDriverType::XBOXONE: type_name = "XBOXONE"; break;
@@ -230,6 +232,16 @@ public:
 			case HostDriverType::DINPUT:
 				debug_printf("DINPUT Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<DInputHost>(gp_idx);
+				break;
+			case HostDriverType::GAMESIR_G7_PRO:
+				/* Skip vendor/config HID (0xFFF0) — only claim Game Pad usage. */
+				if (report_desc && desc_len && !is_hid_gamepad(report_desc, desc_len)) {
+					debug_printf("GAMESIR G7 PRO skip non-gamepad HID iface (desc_len=%u)\n",
+					             static_cast<unsigned>(desc_len));
+					return false;
+				}
+				debug_printf("GAMESIR G7 PRO Loaded\n"); fflush(stdout);
+				interface.driver = std::make_unique<GameSirG7ProHost>(gp_idx);
 				break;
 			case HostDriverType::SWITCH:
 				debug_printf("SWITCH Loaded\n"); fflush(stdout);

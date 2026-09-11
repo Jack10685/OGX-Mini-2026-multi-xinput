@@ -72,7 +72,7 @@ static const HardwareID DINPUT_IDS[] =
     {0x05AC, 0x022D}, // GameSir G4
     {0x05AC, 0x044D}, // GameSir G4 (alt)
     {0x05AC, 0x061A}, // GameSir T3 2.02
-    {0x3537, 0x1022}, // GameSir G7 Pro
+    // GameSir G7 Pro (3537:1022) → dedicated GameSirG7ProHost (not DInput)
     {0x3537, 0x1004}, // GameSir T4 Kaleid
     {0x3537, 0x1094}, // GameSir Tegenaria Lite
     // 8BitDo multi-mode (from SDL_GameControllerDB, HID fallback)
@@ -441,6 +441,12 @@ static const HardwareID N64_IDS[] =
     {0x1234, 0x0004}, // RetroUSB N64 RetroPort
 };
 
+/** GameSir G7 Pro wired HID (Xbox-order face buttons). Always claimed before DINPUT. */
+static const HardwareID GAMESIR_G7_PRO_IDS[] =
+{
+    {0x3537, 0x1022}, // GameSir G7 Pro
+};
+
 #if defined(CONFIG_OGXM_DEBUG)
 /** Flydigi V1 vendor composite (shared by APEX 4 family). Debug probe only — identify via GET_INFO. */
 static const HardwareID FLYDIGI_APEX4_WUKONG_IDS[] =
@@ -466,6 +472,7 @@ struct HostTypeMap
 
 static const HostTypeMap HOST_TYPE_MAP[] = 
 {
+    { GAMESIR_G7_PRO_IDS, sizeof(GAMESIR_G7_PRO_IDS) / sizeof(HardwareID), HostDriverType::GAMESIR_G7_PRO },
 #if defined(CONFIG_OGXM_DEBUG)
     /* Before DINPUT so dedicated probes claim known IDs first. */
     { FLYDIGI_APEX4_WUKONG_IDS, sizeof(FLYDIGI_APEX4_WUKONG_IDS) / sizeof(HardwareID), HostDriverType::FLYDIGI_APEX4_WUKONG },

@@ -323,6 +323,7 @@ if(EN_USB_HOST)
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2SwitchWired.cpp
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2Ds4Wired.cpp
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2HidPassive.cpp
+        ${SRC}/USBHost/HostDriver/GameSirG7Pro/GameSirG7Pro.cpp
 
         ${SRC}/USBHost/HIDParser/HIDJoystick.cpp
         ${SRC}/USBHost/HIDParser/HIDReportDescriptor.cpp
@@ -358,6 +359,7 @@ if(EN_BLUETOOTH)
         ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBt.cpp
         ${SRC}/USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtL2cap.cpp
         ${SRC}/USBHost/HostDriver/GameSirCyclone2/Cyclone2BtProbe.cpp
+        ${SRC}/USBHost/HostDriver/GameSirG7Pro/GameSirG7ProBt.cpp
     )
     list(APPEND INC_DIRS_BOARD
         ${SRC}

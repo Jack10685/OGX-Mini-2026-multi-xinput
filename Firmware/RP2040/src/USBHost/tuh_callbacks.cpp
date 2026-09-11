@@ -34,6 +34,7 @@ const char* host_type_name(HostDriverType t)
         case HostDriverType::N64: return "N64";
         case HostDriverType::FLYDIGI_APEX4_WUKONG: return "FLYDIGI_APEX4_WUKONG";
         case HostDriverType::GAMESIR_CYCLONE2: return "GAMESIR_CYCLONE2";
+        case HostDriverType::GAMESIR_G7_PRO: return "GAMESIR_G7_PRO";
         case HostDriverType::VICTRIX_GAMBIT: return "VICTRIX_GAMBIT";
         case HostDriverType::XBOXOG: return "XBOXOG";
         case HostDriverType::XBOXONE: return "XBOXONE";

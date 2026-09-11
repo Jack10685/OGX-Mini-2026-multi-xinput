@@ -20,6 +20,8 @@ enum class HostDriverType
     FLYDIGI_APEX4_WUKONG,
     /** GameSir Cyclone 2: wired XInput + session-owned Switch NS / DS4. Debug builds. */
     GAMESIR_CYCLONE2,
+    /** GameSir G7 Pro wired HID (3537:1022) — Xbox-order face bits, not DInput PS layout. */
+    GAMESIR_G7_PRO,
     /** Victrix Gambit Tournament Controller — wired Xbox GIP (0E6F:0250 verified, 02D6 documented). */
     VICTRIX_GAMBIT,
     XBOXOG,
