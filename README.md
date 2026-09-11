@@ -144,6 +144,7 @@ See [**Wired Controllers**](Firmware/RP2040/docs/Wired_Controllers.md) for a ful
 - Playstation Classic
 - Generic DInput
 - Generic HID (mappings may need to be editted in the web app)
+- **Flydigi Vader 5 Pro** — **Supported** over **wired USB** and the Flydigi **2.4 GHz USB dongle** (physically confirmed; existing XInput / DInput host paths). **Bluetooth** and **NS (Switch) mode** are **not supported** — use USB or the dongle in a supported PC / XInput / DInput mode.
 - **Flydigi APEX 4 Elite — Black Myth: Wukong Edition** — **Wired USB / PC Mode: Supported**. Full mode matrix (Bluetooth Android / iOS / PC / Switch, 2.4 GHz untested): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md).
 - **GameSir Cyclone 2** — **Supported** wired (XInput / Switch / DS4), 2.4 GHz dongle (Switch / DS4 / Android/iOS), and direct Bluetooth (Switch / DS4 / Android/iOS; no BT XInput): [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md).
 - **GameSir G7 Pro** (`3537:1022`) — **Supported** wired HID via dedicated `GameSirG7ProHost`, and Classic Bluetooth via `GameSirG7ProBt`. **Press Home once after connecting via USB** so the controller finishes connecting properly: [GameSir G7 Pro](Firmware/RP2040/docs/GameSir_G7Pro.md).
@@ -155,6 +156,7 @@ Note: Third-party controllers that change VID/PID by mode or batch may not work 
 
 ### Wireless adapters
 - Xbox 360 PC adapter (Microsoft)
+- **Flydigi Vader 5 Pro 2.4 GHz dongle** — **Supported** (physically confirmed with the Vader 5 Pro)
 - Adapters that present as standard Switch / XInput / PlayStation devices may work; third-party dongles are best-effort only (see [Support policy](#support-policy)).
 
 ### Wireless Bluetooth controllers (Pico W & ESP32)
