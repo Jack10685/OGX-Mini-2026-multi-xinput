@@ -2,7 +2,34 @@
 
 Improvements and fixes applied to the OGX-Mini RP2040 firmware in this project.
 
+**Unreleased / fork changes:**
+- **Xbox 360 / XInput - multiple physical adapters:** Per-device USB and XSM3 identity derived from the Pico unique board ID allows multiple OGX-Mini adapters running the same firmware image to enumerate as independent Xbox 360 controllers. See [§ XInput / Xbox 360 - per-device USB/XSM3 identity](#xinput--xbox-360--per-device-usbxsm3-identity).
+
 **Version:** From **v1.0.0a3** the version was bumped to **v1.0.0a4** to reflect Wii U controller fixes, Gamecube USB mode, PS3 driver fixes, latency improvements, and Xbox 360 (XInput) support (see below). **v1.0.0.8a+** documents **Pico W / Pico 2 W** work on **DualShock 4 (Classic Bluetooth)** vs **BLE advertising**, **BR inquiry**, and related BT stability (see *Pico W / Pico 2 W — DualShock 4 and Classic Bluetooth* below). **v1.0.0.10a** adds **Nintendo Switch 2** wireless support (**Pro 2** and **Joy-Con 2**) over **BLE**, **Switch 1 Joy-Con L+R merge**, and **Joy-Con dual-half latency fixes** (see *Nintendo Switch 2 — Bluetooth* and *Joy-Con pair merge — latency* below). **v1.0.0.11a** adds **PIO USB host wired connection fixes** — **Switch 1/2 Pro**, **DualShock 3**, **Xbox 360 wireless receiver**, and **Razer Atrox Xbox One** (`1532:0a00`) — validated on **Waveshare RP2350-USB-A**, plus **STEAM output mode** for **SteamOS / Bazzite** (see *STEAM mode* below). **v1.0.0.12a** adds **PS3 / PS4 motion passthrough**, **Bluetooth disconnect reboot**, **USB resume → restore BT pairing**, **XInput stock stick feel (#38)**, **Switch HD rumble passthrough**, **Switch 2 anti-deadzone / L3–R3 (#64)**, **RP2354 Bluetooth**, **STEAM touchpad-mouse-only**, **Steam Controller 2026 (Triton) BLE**, and **DualShock 3 USB → Bluetooth auto-pair restore** (sync feature **0xF5** after PIO USB wired init; see sections below).
+
+---
+
+## XInput / Xbox 360 - per-device USB/XSM3 identity
+
+**Goal:** Allow multiple physical OGX-Mini adapters running the same firmware image to connect to one Xbox 360 as independent controllers.
+
+**Problem:** XInput mode used the same static USB serial and XSM3 controller identification serial on every adapter. Two adapters with the same identity could be treated as duplicates by the Xbox 360 instead of being assigned independently.
+
+**Approach:**
+| Item | Detail |
+|------|--------|
+| **Unique source** | Pico unique board ID via `pico_get_unique_board_id()` |
+| **Serial** | 48 bits of the board ID encoded as a 12-character uppercase hexadecimal serial |
+| **USB** | Generated serial exposed as USB `iSerialNumber` |
+| **XSM3** | Same serial replaces the stock 12-byte controller serial in the XSM3 identification packet |
+| **Checksum** | Recalculate the XSM3 identification packet XOR checksum after changing the serial |
+| **Firmware** | Identity is generated at runtime, so the same UF2 can be flashed to every adapter |
+| **VID/PID** | Xbox 360 controller VID/PID remains unchanged |
+| **Scope** | One OGX-Mini still exposes one XInput controller; use one physical adapter per player |
+
+**Tested:** A Raspberry Pi Pico 2 W adapter and an RP2040-ZERO adapter confirmed simultaneously as separate Xbox 360 players with independent in-game input. Four-adapter / USB hub testing pending.
+
+**Files:** `src/USBDevice/DeviceDriver/XInput/XInput.cpp`, `CMakeLists.txt`.
 
 **Version 1.0.0.12a — documented here for release notes:**
 
