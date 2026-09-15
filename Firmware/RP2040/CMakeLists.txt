@@ -108,6 +108,7 @@ set(LIBS_BOARD
     pico_stdlib
     pico_multicore
     pico_rand
+    pico_unique_id
     hardware_timer
     hardware_clocks
     hardware_flash
