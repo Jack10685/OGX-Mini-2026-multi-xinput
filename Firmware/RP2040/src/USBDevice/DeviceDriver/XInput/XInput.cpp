@@ -1,6 +1,6 @@
 #include <cstdio>
 #include <cstring>
-
+#include "pico/unique_id.h"
 #include "pico/time.h"
 #include "tusb.h"
 #include "USBDevice/DeviceDriver/XInput/tud_xinput/tud_xinput.h"
@@ -12,6 +12,59 @@ extern "C" {
 
 // XSM3 state and buffers — match joypad-os: init at driver init, defer crypto to process() loop
 namespace {
+	static uint8_t xsm3_identification[0x1D];
+	static char usb_serial[13];
+	static bool identity_initialized = false;
+
+	static uint8_t calculate_xsm3_checksum(const uint8_t* packet)
+	{
+		const uint8_t packet_end = packet[4] + 5;
+		uint8_t checksum = 0;
+
+		for (uint8_t i = 5; i < packet_end; ++i)
+			checksum ^= packet[i];
+
+		return checksum;
+	}
+
+	static void initialize_device_identity()
+	{
+		if (identity_initialized)
+			return;
+
+		pico_unique_board_id_t board_id;
+		pico_get_unique_board_id(&board_id);
+
+		// Use the lower 48 bits of the unique board ID as a 12-character serial.
+		for (int i = 0; i < 6; ++i)
+		{
+			const uint8_t value = board_id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 6 + i];
+			std::snprintf(&usb_serial[i * 2], 3, "%02X", value);
+		}
+		usb_serial[12] = '\0';
+
+		// Start with the stock Microsoft controller identification packet.
+		std::memcpy(
+			xsm3_identification,
+			xsm3_id_data_ms_controller,
+			sizeof(xsm3_identification)
+		);
+
+		// The XSM3 serial is 12 bytes beginning at packet offset 0x05.
+		std::memcpy(&xsm3_identification[0x05], usb_serial, 12);
+
+		// Packet checksum is stored at byte 0x1C.
+		xsm3_identification[0x1C] =
+			calculate_xsm3_checksum(xsm3_identification);
+
+		identity_initialized = true;
+
+		printf(
+			"XInput identity: serial=%s checksum=0x%02X\n",
+			usb_serial,
+			xsm3_identification[0x1C]
+		);
+	}
 	enum class Xsm3AuthState : uint8_t {
 		Idle = 0,
 		InitReceived = 1,   // 0x82 data received, pending xsm3_do_challenge_init
@@ -43,9 +96,11 @@ namespace {
 void XInputDevice::initialize()
 {
 	class_driver_ = *tud_xinput::class_driver();
-	// joypad-os: init XSM3 at mode init so 0x81 can send ID without doing init in callback
+
+	initialize_device_identity();
+
 	xsm3_initialise_state();
-	xsm3_set_identification_data(xsm3_id_data_ms_controller);
+	xsm3_set_identification_data(xsm3_identification);
 	xsm3_auth_state = Xsm3AuthState::Idle;
 }
 
@@ -181,7 +236,12 @@ bool XInputDevice::vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_co
 	case 0x81:
 		if (stage == CONTROL_STAGE_SETUP) printf("XSM3: 0x81 GET_SERIAL\n");
 		if (stage == CONTROL_STAGE_SETUP && request->wLength >= 0x1D)
-			return tud_control_xfer(rhport, request, const_cast<uint8_t*>(xsm3_id_data_ms_controller), 0x1D);
+			return tud_control_xfer(
+				rhport,
+				request,
+				xsm3_identification,
+				0x1D
+			);
 		return true;
 
 	// 0x82: Host OUT — receive challenge init; defer xsm3_do_challenge_init to process() (joypad-os)
@@ -259,6 +319,11 @@ bool XInputDevice::vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_co
 const uint16_t * XInputDevice::get_descriptor_string_cb(uint8_t index, uint16_t langid)
 {
 	// joypad-os: XInput string index 4 (XSM3 security) uses a 96-char buffer and full length
+	if (index == 3)
+	{
+		initialize_device_identity();
+		return get_string_descriptor(usb_serial, index);
+	}
 	if (index == 4)
 	{
 		static uint16_t xsm3_str[96];
