@@ -279,8 +279,9 @@ void XInputDevice::process(const uint8_t idx, Gamepad& gamepad)
 
 uint16_t XInputDevice::get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) 
 {
-    std::memcpy(buffer, &in_report_, sizeof(XInput::InReport));
-	return sizeof(XInput::InReport);
+	const uint16_t len = (reqlen < sizeof(XInput::InReport)) ? reqlen : sizeof(XInput::InReport);
+	std::memcpy(buffer, &in_report_, len);
+	return len;
 }
 
 void XInputDevice::set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) {}
@@ -299,14 +300,17 @@ bool XInputDevice::vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_co
 	{
 	// 0x81: Host GET — send controller identification (0x1D bytes). XSM3 already inited in initialize().
 	case 0x81:
-		if (stage == CONTROL_STAGE_SETUP) printf("XSM3: 0x81 GET_SERIAL\n");
-		if (stage == CONTROL_STAGE_SETUP && request->wLength >= 0x1D)
-			return tud_control_xfer(
-				rhport,
-				request,
-				xsm3_identification,
-				0x1D
-			);
+		if (stage == CONTROL_STAGE_SETUP)
+		{
+			printf("XSM3: 0x81 GET_SERIAL\n");
+			if (request->wLength >= 0x1D)
+				return tud_control_xfer(
+					rhport,
+					request,
+					xsm3_identification,
+					0x1D
+				);
+		}
 		return true;
 
 	// 0x82: Host OUT — receive challenge init; defer xsm3_do_challenge_init to process() (joypad-os)
@@ -348,9 +352,11 @@ bool XInputDevice::vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_co
 
 	// 0x84: Host GET — keepalive, zero-length response (joypad-os)
 	case 0x84:
-		if (stage == CONTROL_STAGE_SETUP) printf("XSM3: 0x84 KEEPALIVE\n");
 		if (stage == CONTROL_STAGE_SETUP)
+		{
+			printf("XSM3: 0x84 KEEPALIVE\n");
 			return tud_control_xfer(rhport, request, nullptr, 0);
+		}
 		return true;
 
 	// 0x86: Host GET — state 1 = processing, 2 = response ready (joypad-os)
