@@ -208,12 +208,14 @@ Highlights:
 
 - **Pico W / Pico 2 W / RP2354 — USB resume restores BT pairing** — After console USB standby, scans restart without unplugging the dongle. Details: [IMPROVEMENTS — USB resume pairing](Firmware/RP2040/docs/IMPROVEMENTS.md#pico-w--pico-2-w--rp2354-bt--usb-resume-restores-pairing-scans).
 
-- **Two adapters on one Xbox 360** - Multiple adapters can now enumerate
+- **Two adapters on Xbox 360** - Multiple adapters can now enumerate
   as independent controllers in XInput mode. Each board derives a unique USB
   serial and XSM3 identification serial from its Pico unique board ID, so the
   same UF2 can be flashed to multiple adapters without them being treated as
   duplicate controllers. Confirmed with a Raspberry Pi Pico 2 W and an RP2040-ZERO.
-  four-adapter / USB hub testing pending.
+  four-adapter / USB hub testing pending. See [IMPROVEMENTS — Summary](Firmware/RP2040/docs/IMPROVEMENTS.md#summary).
+
+- **Two adapters on other consoles** — **Not supported yet** as two independent players: units share the same USB identity (VID/PID / serial). Use **one OGX + a native or other-brand pad**, or a **multi-port** host. See [IMPROVEMENTS — Summary](Firmware/RP2040/docs/IMPROVEMENTS.md#summary).
 
 - **PS3 / PS4 motion (tilt / IMU passthrough)** — **PS3** and **PS4** output modes forward accelerometer (and gyro where available) from **DualShock 4**, **DualSense**, **Switch Pro**, and **Wii Remote** (BT/USB where supported). **Switch** output does not pass through motion for now. For **real PS3/PS4 consoles**, use a **USB adapter** between OGX-Mini and the console — **tested with [Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** (works on **PS3** and **PS4**). Details: [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [IMPROVEMENTS.md — motion passthrough](Firmware/RP2040/docs/IMPROVEMENTS.md#ps3--ps4-output--motion-passthrough).
 
@@ -281,7 +283,7 @@ CMake option **`-DMAX_GAMEPADS=2`** (or **3** / **4**) builds firmware that can 
 
 A multi-pad build may still **compile** with other modes available in the combo list, but those modes are **not tested**, **not intended** for more than one controller at a time, and **not supported** for multi-player setups. Bugs, missing players, wrong port assignment, or console rejection are expected if you use them that way.
 
-**Recommendation:** Use **`-DMAX_GAMEPADS=1`** (default) unless you specifically need a Wii U GameCube Adapter multi-player adapter. For Xbox 360 local multiplayer, use one OGX-Mini per player, each adapter receives its own per-device XSM3/USB identity. See **Two adapters on one Xbox 360** under [Features new to this fork](#features-new-to-this-fork).
+**Recommendation:** Use **`-DMAX_GAMEPADS=1`** (default) unless you specifically need a Wii U GameCube Adapter multi-player adapter. For Xbox 360 local multiplayer, use one OGX-Mini per player, each adapter receives its own per-device XSM3/USB identity. See **Two adapters on Xbox 360** and **Two adapters on other consoles** under [Features new to this fork](#features-new-to-this-fork).
 
 You'll need the tools listed in [Building_From_Source.md](Firmware/RP2040/docs/Building_From_Source.md). CMake scripts patch Bluepad32 and BTStack and initialize selected git submodules; clone with `--recursive` (or `git submodule update --init --recursive`) and install Pico SDK **2.1.0** before the first build.
 
