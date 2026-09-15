@@ -3,6 +3,15 @@
 Features and fixes added in this fork. For the latest firmware improvements (PS3, XInput, latency, **SteamOS / Bazzite (STEAM mode — DualSense emulation + touchpad mouse)**, **Pico W Bluetooth / DS4 Classic BT**, **Xbox Series BLE disconnect reboot**, **Switch 2 Pro + Joy-Con 2 BLE**, **Steam Controller 2026 (Triton) BLE**, **DualShock 3 USB→BT auto-pair (`0xF5`)**, **Waveshare RP2350-USB-A wired host fixes (Switch Pro, PS3, Xbox 360 receiver, Razer Atrox XBO)**, **PS3 / PS4 motion passthrough**, etc.), see [Firmware/RP2040/docs/IMPROVEMENTS.md](Firmware/RP2040/docs/IMPROVEMENTS.md).
 
 ---
+### Xbox 360 multi-adapter support
+
+- Added per-device Xbox 360 USB/XSM3 identity generation using the Pico unique board ID.
+- USB **`iSerialNumber`** and the 12-byte XSM3 identification serial now match and are unique per board.
+- Recalculates the XSM3 identification packet checksum after replacing the serial.
+- Allows multiple OGX-Mini adapters running the same firmware image to enumerate as separate Xbox 360 controllers.
+- Confirmed with a Raspberry Pi Pico 2 W and RP2040 on an Xbox 360, four-adapter USB hub testing with multiple Pico 2 Ws is pending.
+
+---
 
 ### Version 1.0.0.13a
 
