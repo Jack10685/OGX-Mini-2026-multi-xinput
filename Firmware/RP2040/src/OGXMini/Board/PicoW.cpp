@@ -33,6 +33,7 @@
 #include "host/hcd.h"
 #include "pio_usb.h"
 #include "USBHost/HostManager.h"
+#include "Input/InputSlot.h"
 #include <pico/flash.h>
 #include "Wii/WiiReportConverter.h"
 
@@ -132,6 +133,29 @@ static void pico_w_usb_host_full_stop() {
     /* GPIO IRQs were suspended for PIO; restore so unplug/plug is visible again without "shorting" the port. */
     board_api_usbh::enable_host_line_irq_monitoring();
 }
+
+namespace board_api_usbh {
+
+/**
+ * Strong override of the weak empty stub in board_api_usbh.cpp.
+ * Mode switch (store_driver_type → disconnect_all → NVS write → reboot) must
+ * stop the 1 kHz SOF timer and halt Core1 (BTstack) before flash erase/program.
+ */
+void stop_pio_usb_host() {
+    OGXM_LOG("PicoW: stop_pio_usb_host (SOF stop + Core1 reset + tuh_deinit)\n");
+    pico_w_usb_sof_timer_stop();
+    multicore_reset_core1();
+    sleep_ms(50);
+    if (s_pio_usb_tuh_inited) {
+        (void)tuh_deinit(BOARD_TUH_RHPORT);
+        s_pio_usb_tuh_inited = false;
+    }
+    s_usb_line_debounce_armed = false;
+    s_usb_unplug_debounce_armed = false;
+    enable_host_line_irq_monitoring();
+}
+
+} // namespace board_api_usbh
 
 /**
  * Runs every ~1 ms from Core0 (normal Pico W modes) or from Core1 (GPIO modes that block Core0 in run_task).
@@ -582,6 +606,9 @@ void pico_w::run() {
             device_driver->process(i, _gamepads[i]);
         }
         bluepad32::process_pending_adaptive_triggers();
+#if defined(CONFIG_EN_USB_HOST)
+        InputSlot::poll_perf_log();
+#endif
         if (!wii_mode) {
             if (tud_mounted() && !mounted_logged) {
                 mounted_logged = true;

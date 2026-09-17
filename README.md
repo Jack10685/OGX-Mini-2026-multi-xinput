@@ -26,6 +26,7 @@ I can only **test and maintain** these boards:
 - Raspberry Pi **Pico W**
 - Raspberry Pi **Pico 2 W**
 - Waveshare **RP2350-USB-A**
+- **OGX Live**
 
 I cannot purchase and validate every board variant this repo builds for. For other boards (including RP2040-Zero, RP2350-Zero, XIAO, RP2354, ESP32 hybrids, 4-channel setups, and clones): **fork or clone this repository**, develop and test your patches on your hardware, and **open a pull request** so fixes can be merged here for everyone. Maintainer-led work on an additional board still requires a **GitHub issue** plus a **donation earmarked for that board** (or shipped hardware under a prior agreement).
 
@@ -50,7 +51,7 @@ Unofficial clones, random AliExpress spin-offs, or homebrew PCBs that only “lo
 |----------|----------------|
 | **Support & contributing** | [Support issue requirements](Firmware/RP2040/docs/Support_Issue_Requirements.md), [Building from source](Firmware/RP2040/docs/Building_From_Source.md), [Firmware architecture](Firmware/RP2040/docs/Firmware_Architecture.md), [Adding supported controllers](Firmware/RP2040/docs/Adding_Supported_Controllers.md), [Support policy](#support-policy) |
 | **Feature guides** | [SteamOS / Bazzite](Firmware/RP2040/docs/SteamOS_Bazzite_Output_Mode.md), [PS3/PS4 motion](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [Wii mode](Firmware/RP2040/docs/Wii_Mode_Guide.md), [GPIO pinouts](Firmware/RP2040/docs/GPIO_Output_Pinout_and_Mappings.md) |
-| **Reference** | [Wired controllers](Firmware/RP2040/docs/Wired_Controllers.md), [Controller mappings](Firmware/RP2040/docs/Controller_Mappings.md) |
+| **Reference** | [Wired controllers](Firmware/RP2040/docs/Wired_Controllers.md), [Victrix Gambit](Firmware/RP2040/docs/Victrix_Gambit.md), [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md), [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md), [GameSir G7 Pro](Firmware/RP2040/docs/GameSir_G7Pro.md), [Controller mappings](Firmware/RP2040/docs/Controller_Mappings.md) |
 | **Technical notes** | [Firmware architecture](Firmware/RP2040/docs/Firmware_Architecture.md), [Planned additions](Firmware/RP2040/docs/Planned_Additions.md), [IMPROVEMENTS.md](Firmware/RP2040/docs/IMPROVEMENTS.md), [CHANGELOG.md](CHANGELOG.md) |
 | **Research / planning** | [docs/](docs/README.md) (input research, retro wiring, other projects’ modes) |
 
@@ -64,7 +65,7 @@ Unofficial clones, random AliExpress spin-offs, or homebrew PCBs that only “lo
 - Playstation Classic
 - DInput
 - **SteamOS / Bazzite** — Linux desktop / Steam Deck (desktop mode): **DualSense** USB gamepad + **touchpad → HID mouse** (see [SteamOS / Bazzite output mode](Firmware/RP2040/docs/SteamOS_Bazzite_Output_Mode.md))
-- **PS3 / PS4 motion** — Sixaxis / accelerometer passthrough from DS4, DualSense, Switch Pro, and Wii Remote (see [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md))
+- **PS3 / PS4 motion** — Sixaxis / accelerometer passthrough from DS4, DualSense, Switch Pro, and Wii Remote for use with **authentication dongles** (e.g. Brook). **PS4 mode is not native PS4 console output** — licensed PS4 auth is not supported by this firmware (see [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md))
 - Wii U (GameCube Adapter) — **only output mode tested and supported for multi-controller builds** (`MAX_GAMEPADS` > 1; see [Multi-controller builds](#multi-controller-builds-max_gamepads--1))
 - **Wii (Wiimote)** — Pico W / Pico 2 W only; build with `-DOGXM_FIXED_DRIVER=WII`. See [Wii Mode Guide](Firmware/RP2040/docs/Wii_Mode_Guide.md).
 - **PlayStation 1 & 2** — GPIO output to a console controller cable. **Intended use:** **Pico W** or **Pico 2 W** + Bluetooth pad, wired to a PS1/PS2 controller cable plugged into the console (wireless adapter). **USB-A / wired USB host input on those boards does not work in these builds and is out of scope.** See [GPIO pinouts](Firmware/RP2040/docs/GPIO_Output_Pinout_and_Mappings.md).
@@ -74,7 +75,7 @@ Unofficial clones, random AliExpress spin-offs, or homebrew PCBs that only “lo
 
 ![Supported platforms](images/platform-list.png "Supported platforms")
 
-**RP2040 output modes:** **USB device:** XInput (Xbox 360 + XSM3), DInput, PS3, **PS4 (DualShock 4 USB)**, **STEAM (SteamOS / Bazzite — DualSense + touchpad mouse)**, **Switch Pro** (Nintendo Switch Pro Controller emulation), Wii U, **Wii (Wiimote, build-option only)**, Xbox OG (Gamepad / Steel Battalion / XRemote), PS Classic, Web App. **GPIO (no USB device):** PS1/PS2, Dreamcast, GameCube, N64 — intended for **Pico W / Pico 2 W** as a wireless bridge (**Bluetooth in** → GPIO out on a hacked controller cable). **USB-A / wired USB host input on those boards is unsupported for these modes.** **Wii, GameCube, and N64 are not in the combo list** — use a dedicated build for those modes (see below).
+**RP2040 output modes:** **USB device:** XInput (Xbox 360 + XSM3), DInput, PS3, **PS4 (DualShock 4 USB gadget for motion on auth dongles — not licensed PS4 console output)**, **STEAM (SteamOS / Bazzite — DualSense + touchpad mouse)**, **Switch Pro** (Nintendo Switch Pro Controller emulation), Wii U, **Wii (Wiimote, build-option only)**, Xbox OG (Gamepad / Steel Battalion / XRemote), PS Classic, Web App. **GPIO (no USB device):** PS1/PS2, Dreamcast, GameCube, N64 — intended for **Pico W / Pico 2 W** as a wireless bridge (**Bluetooth in** → GPIO out on a hacked controller cable). **USB-A / wired USB host input on those boards is unsupported for these modes.** **Wii, GameCube, and N64 are not in the combo list** — use a dedicated build for those modes (see below).
 
 ## Changing platforms
 By default the OGX-Mini will emulate an OG Xbox controller, you must hold a button combo for 3 seconds to change which platform you want to play on. Your chosen mode will persist after powering off the device. 
@@ -93,8 +94,9 @@ Start = Plus (Switch) = Options (Dualsense/DS4)
     - Start + Dpad Down
 - PlayStation 3
     - Start + Dpad Left
-- PlayStation 4 (DualShock 4 USB)
+- PlayStation 4 motion (DualShock 4 USB gadget for auth dongles — **not** licensed PS4 console output)
     - Start + Left Bumper + D-pad **Left**
+    - Made so **motion controls** work through an **authentication dongle** (e.g. Brook Wingman). This firmware does **not** perform PS4 authentication; plug OGX into a licensed dongle, then the dongle into the PS4.
 - SteamOS / Bazzite (DualSense USB + touchpad mouse)
     - Start + Left Bumper + D-pad **Up**
 - PlayStation Classic
@@ -144,11 +146,19 @@ See [**Wired Controllers**](Firmware/RP2040/docs/Wired_Controllers.md) for a ful
 - Playstation Classic
 - Generic DInput
 - Generic HID (mappings may need to be editted in the web app)
+- **Flydigi Vader 5 Pro** — **Supported** over **wired USB** and the Flydigi **2.4 GHz USB dongle** (physically confirmed; existing XInput / DInput host paths). **Bluetooth** and **NS (Switch) mode** are **not supported** — use USB or the dongle in a supported PC / XInput / DInput mode.
+- **Flydigi APEX 4 Elite — Black Myth: Wukong Edition** — **Wired USB / PC Mode: Supported**. Full mode matrix (Bluetooth Android / iOS / PC / Switch, 2.4 GHz untested): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md).
+- **GameSir Cyclone 2** — **Supported** wired (XInput / Switch / DS4), 2.4 GHz dongle (Switch / DS4 / Android/iOS), and direct Bluetooth (Switch / DS4 / Android/iOS; no BT XInput): [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md).
+- **GameSir G7 Pro** (`3537:1022`) — **Supported** wired HID via dedicated `GameSirG7ProHost`, and Classic Bluetooth via `GameSirG7ProBt`. **Press Home once after connecting via USB** so the controller finishes connecting properly: [GameSir G7 Pro](Firmware/RP2040/docs/GameSir_G7Pro.md).
+- **SCUF Instinct** — **Supported** wired USB (Xbox / XInput path) and **Bluetooth LE** on Pico W / Pico 2 W / RP2354 (same Xbox Series HOGP path as first-party Series pads).
+- **Razer Wolverine V3 Tournament Edition** — **Supported**, **wired USB only** (Xbox / XInput path; no Bluetooth on this model).
+- **Victrix Gambit Tournament Controller / Gambit Prime** — **Supported**, **wired USB only** (Xbox GIP, `0E6F:0250` physically verified). Press **Home / Xbox once** after connecting to wake the controller: [Victrix Gambit](Firmware/RP2040/docs/Victrix_Gambit.md).
 
 Note: Third-party controllers that change VID/PID by mode or batch may not work correctly and are **not** a focus for new support.
 
 ### Wireless adapters
 - Xbox 360 PC adapter (Microsoft)
+- **Flydigi Vader 5 Pro 2.4 GHz dongle** — **Supported** (physically confirmed with the Vader 5 Pro)
 - Adapters that present as standard Switch / XInput / PlayStation devices may work; third-party dongles are best-effort only (see [Support policy](#support-policy)).
 
 ### Wireless Bluetooth controllers (Pico W & ESP32)
@@ -169,13 +179,34 @@ Full technical detail: **[Firmware/RP2040/docs/IMPROVEMENTS.md](Firmware/RP2040/
 
 **Steam Controller 2026 / Triton (Pico W / Pico 2 W / RP2354 BT):** Hold **RB + B + Steam** for BLE pairing (`28de:1303`, HID-over-GATT). **Remove/disconnect it from PC or phone Bluetooth first** — only one host can own the link. Uses **LE Secure Connections**. **View → Start**, **Menu → Back/Select**, **Steam → Guide / SYS**. Details: [IMPROVEMENTS — Steam Controller 2026](Firmware/RP2040/docs/IMPROVEMENTS.md#steam-controller-2026-triton--bluetooth).
 
+**Flydigi APEX 4 Elite — Black Myth: Wukong Edition (Pico W / Pico 2 W / RP2354 BT):** Physically tested Bluetooth modes:
+
+| Mode | Status | Known limitations |
+|------|--------|-------------------|
+| **PC** | Supported | None known |
+| **Android** | Supported with limitation | Home button does not work |
+| **iOS** | Supported with limitation | Home button does not work |
+| **Switch** | Supported with limitation | Back Remap Buttons do not work |
+
+**2.4 GHz USB dongle:** Untested — the wireless dongle was not available during implementation, so compatibility is currently unknown. Full matrix (including wired PC Mode): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md).
+
+**GameSir Cyclone 2 (Pico W / Pico 2 W / RP2354 BT):** Physically tested Bluetooth modes — **Switch**, **DS4**, and **Android/iOS** working. Direct Bluetooth XInput is not supported (use those input personalities and let OGX output Xbox 360 / XInput). Also supported over wired USB and the GameSir 2.4 GHz dongle. Full matrix: [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md).
+
+**GameSir G7 Pro (Pico W / Pico 2 W / RP2354 BT):** **Supported** over Classic Bluetooth (name `GameSir-G7 Pro`, Report `0x07`). Also **Supported** over wired USB (`3537:1022`); **press Home once after plugging in USB** so the controller connects properly. Details: [GameSir G7 Pro](Firmware/RP2040/docs/GameSir_G7Pro.md).
+
+**SCUF Instinct (Pico W / Pico 2 W / RP2354 BT):** **Supported** over **Bluetooth LE** (Xbox Series–compatible HOGP; DIS reports Microsoft **`045e:0b13`**). Put the pad in wireless pairing mode; do **not** leave it bonded to a PC/phone first. Same stack path as first-party **Xbox Series BLE** (Just Works, seeded Report Map on CYW43). **Wired USB** also works via the Xbox / XInput host path.
+
 **First-party / regularly maintained (Bluetooth):**
 - Xbox Series, One, and Elite 2
+- **SCUF Instinct** (BLE; see note above)
 - Dualshock 3
 - Dualshock 4
 - Dualsense
 - Switch Pro
 - **Switch 2 Pro** and **Joy-Con 2 (L/R)** (BLE on Pico W / Pico 2 W / RP2354; wired USB also supported)
+- **Flydigi APEX 4 Black Myth: Wukong** (see mode table above)
+- **GameSir Cyclone 2** (see note above)
+- **GameSir G7 Pro** (see note above)
 - Wii U Pro
 - Wii Remote
    - Supported Extensions:
@@ -208,15 +239,22 @@ Highlights:
 
 - **Pico W / Pico 2 W / RP2354 — USB resume restores BT pairing** — After console USB standby, scans restart without unplugging the dongle. Details: [IMPROVEMENTS — USB resume pairing](Firmware/RP2040/docs/IMPROVEMENTS.md#pico-w--pico-2-w--rp2354-bt--usb-resume-restores-pairing-scans).
 
-- **Two adapters on one console** — **Not supported yet** as two independent players: units share the same USB identity (VID/PID / serial / XSM3 on 360). Use **one OGX + a native or other-brand pad**, or a **multi-port** host. See [IMPROVEMENTS — Summary](Firmware/RP2040/docs/IMPROVEMENTS.md#summary).
+- **Two adapters on Xbox 360** - Multiple adapters can now enumerate
+  as independent controllers in XInput mode. Each board derives a unique USB
+  serial and XSM3 identification serial from its Pico unique board ID, so the
+  same UF2 can be flashed to multiple adapters without them being treated as
+  duplicate controllers. Confirmed with a Raspberry Pi Pico 2 W and an RP2040-ZERO.
+  four-adapter / USB hub testing pending. See [IMPROVEMENTS — Summary](Firmware/RP2040/docs/IMPROVEMENTS.md#summary).
 
-- **PS3 / PS4 motion (tilt / IMU passthrough)** — **PS3** and **PS4** output modes forward accelerometer (and gyro where available) from **DualShock 4**, **DualSense**, **Switch Pro**, and **Wii Remote** (BT/USB where supported). **Switch** output does not pass through motion for now. For **real PS3/PS4 consoles**, use a **USB adapter** between OGX-Mini and the console — **tested with [Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** (works on **PS3** and **PS4**). Details: [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [IMPROVEMENTS.md — motion passthrough](Firmware/RP2040/docs/IMPROVEMENTS.md#ps3--ps4-output--motion-passthrough).
+- **Two adapters on other consoles** — **Not supported yet** as two independent players: units share the same USB identity (VID/PID / serial). Use **one OGX + a native or other-brand pad**, or a **multi-port** host. See [IMPROVEMENTS — Summary](Firmware/RP2040/docs/IMPROVEMENTS.md#summary).
+
+- **PS3 / PS4 motion (tilt / IMU passthrough)** — **PS3** and **PS4** modes forward accelerometer (and gyro where available) from **DualShock 4**, **DualSense**, **Switch Pro**, and **Wii Remote** (BT/USB where supported). **PS4 mode is for motion on authentication dongles** (DualShock 4 USB gadget profile); it is **not** native/licensed PS4 console output — PS4 auth is **not supported directly** by this firmware. **Switch** output does not pass through motion for now. For **real PS3/PS4 consoles**, use a **licensed USB authentication dongle** between OGX-Mini and the console — **tested with [Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** (works on **PS3** and **PS4**). Details: [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [IMPROVEMENTS.md — motion passthrough](Firmware/RP2040/docs/IMPROVEMENTS.md#ps3--ps4-output--motion-passthrough).
 
 - **SteamOS / Bazzite (STEAM output mode)** — **Start + Left Bumper + D-pad Up** (~3 s), **web app**, or `-DOGXM_FIXED_DRIVER=STEAM` / build-script fixed mode. USB enumerates as **Sony DualSense** (`054c:0ce6`) **plus** a separate **HID mouse** interface. **DualSense emulation:** passthrough of the real PS5 report when input is DualSense (BT or wired USB); other controllers get a **synthesized** DualSense report (Cross/Circle/Square/Triangle, L1/R2, Share/Options, PS). **Touchpad → mouse:** DualSense touchpad drag moves the desktop cursor; tap = left click. Controllers without a touchpad are gamepad-only. Works with **Bluetooth** (Pico W / Pico 2 W) or **wired USB** input. Details: [SteamOS / Bazzite output mode](Firmware/RP2040/docs/SteamOS_Bazzite_Output_Mode.md), [IMPROVEMENTS.md — STEAM mode](Firmware/RP2040/docs/IMPROVEMENTS.md#steam-mode--steamos--bazzite-linux-desktop), [Controller_Mappings.md — STEAM](Firmware/RP2040/docs/Controller_Mappings.md#steamos--bazzite-steam-mode).
 
 - **Pico W / Pico 2 W — PIO USB wired unplug:** When you unplug the gamepad from the adapter’s USB host port, the firmware now **detects disconnect reliably** even though PIO USB owns D+/D− (GPIO line state often never shows a true “disconnected” idle). Detection uses **debounced** hints: **HCD port connect status**, **no TinyUSB configured device** (all `tuh_mounted` addresses), and **no host input reports** for a few seconds — so the TinyUSB/PIO host can **tear down**, **GPIO line IRQ monitoring** can resume, and **Bluetooth pairing** can work again without power-cycling or “shorting” the port. Details: [IMPROVEMENTS.md — Pico W PIO USB unplug](Firmware/RP2040/docs/IMPROVEMENTS.md#pico-w--pico-2-w--pio-usb-wired-controller-unplug-detection).
 
-*Note: Maintainer testing is on Feather / Pico W / Pico 2 W / Waveshare RP2350-USB-A. Other boards may not have been tested for every change — community PRs welcome.*
+*Note: Maintainer testing is on Feather / Pico W / Pico 2 W / Waveshare RP2350-USB-A / **OGX Live**. Other boards may not have been tested for every change — community PRs welcome.*
 
 ## Planned additions
 
@@ -233,7 +271,9 @@ I've designed a PCB for the RP2040-Zero so you can make a small form-factor adap
 
 Community guide (VID/PID, report capture, new host drivers, button mapping, Debug UART logging): **[Adding_Supported_Controllers.md](Firmware/RP2040/docs/Adding_Supported_Controllers.md)**.
 
-Maintainer policy for first-party / donated hardware: [Support policy](#support-policy). Wired pad lists: [Wired Controllers](Firmware/RP2040/docs/Wired_Controllers.md).
+**Architecture:** New controllers get a **dedicated driver** by default. Do **not** modify an existing working driver to add a different pad — see [dedicated drivers](Firmware/RP2040/docs/Adding_Supported_Controllers.md#architecture-requirement--dedicated-drivers-for-new-controllers).
+
+Maintainer policy for first-party / donated hardware: [Support policy](#support-policy). Wired pad lists: [Wired Controllers](Firmware/RP2040/docs/Wired_Controllers.md). Victrix Gambit (wired GIP): [Victrix Gambit](Firmware/RP2040/docs/Victrix_Gambit.md). Flydigi APEX 4 (wired + BT modes): [Flydigi APEX 4 Wukong](Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md). GameSir Cyclone 2 (wired + dongle + BT): [GameSir Cyclone 2](Firmware/RP2040/docs/GameSir_Cyclone2.md). GameSir G7 Pro (wired + Classic BT; press Home after USB): [GameSir G7 Pro](Firmware/RP2040/docs/GameSir_G7Pro.md).
 
 ## Build
 
@@ -245,7 +285,7 @@ Prerequisites: **git**, **Python 3**, **CMake** (≥ 3.13), **Ninja**, **arm-non
 
 #### Board options (OGXM_BOARD)
 
-**Maintainer-tested boards:** Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A — see [Support policy](#support-policy). Other `OGXM_BOARD` values remain buildable for community use; please **clone, fix, and open a pull request** for those targets rather than expecting untested maintainer fixes. Clones and knock-offs are not supported.
+**Maintainer-tested boards:** Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A, **OGX Live** — see [Support policy](#support-policy). Other `OGXM_BOARD` values remain buildable for community use; please **clone, fix, and open a pull request** for those targets rather than expecting untested maintainer fixes. Clones and knock-offs are not supported.
 
 Use one of these values for **`OGXM_BOARD`** in a manual build, or pick the same board from the build script’s numbered list:
 
@@ -276,7 +316,7 @@ CMake option **`-DMAX_GAMEPADS=2`** (or **3** / **4**) builds firmware that can 
 
 A multi-pad build may still **compile** with other modes available in the combo list, but those modes are **not tested**, **not intended** for more than one controller at a time, and **not supported** for multi-player setups. Bugs, missing players, wrong port assignment, or console rejection are expected if you use them that way.
 
-**Recommendation:** Use **`-DMAX_GAMEPADS=1`** (default) unless you specifically need a **Wii U GameCube Adapter** multi-player adapter. For local multiplayer on other consoles, use **one OGX-Mini per player** or a native multi-port solution — see **Two adapters on one console** under [Features new to this fork](#features-new-to-this-fork).
+**Recommendation:** Use **`-DMAX_GAMEPADS=1`** (default) unless you specifically need a Wii U GameCube Adapter multi-player adapter. For Xbox 360 local multiplayer, use one OGX-Mini per player, each adapter receives its own per-device XSM3/USB identity. See **Two adapters on Xbox 360** and **Two adapters on other consoles** under [Features new to this fork](#features-new-to-this-fork).
 
 You'll need the tools listed in [Building_From_Source.md](Firmware/RP2040/docs/Building_From_Source.md). CMake scripts patch Bluepad32 and BTStack and initialize selected git submodules; clone with `--recursive` (or `git submodule update --init --recursive`) and install Pico SDK **2.1.0** before the first build.
 

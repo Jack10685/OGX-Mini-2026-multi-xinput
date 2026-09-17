@@ -63,6 +63,11 @@ namespace tuh_xinput
         bool gip_arcade_stick{false};
         /** GIP OUT sequence byte (Linux xpad odata_serial). */
         uint8_t gip_out_seq{0};
+        /**
+         * When true, never assign host GIP sequence 0 (xone data_sequence behavior).
+         * Used by Victrix Gambit only — other Xbox paths keep legacy 0-start sequencing.
+         */
+        bool gip_seq_skip_zero{false};
         /** Linux xpad sends xboxone_power_on once; repeats make arcade sticks flash/cycle power. */
         bool gip_power_sent{false};
         /** Last successful GIP IN xfer (ms); used to re-arm IN only when the chain stalls. */
@@ -106,6 +111,52 @@ namespace tuh_xinput
     /** Re-arm stalled GIP IN on PIO USB (call from HostManager::send_feedback). */
     void service_gip(uint8_t dev_addr, uint8_t instance);
 
+    /**
+     * Shared GIP OUT helpers for dedicated drivers (e.g. Victrix Gambit).
+     * Sequence byte is assigned at packet[2] when assign_seq is true.
+     */
+    bool send_gip_out(uint8_t address, uint8_t instance, const uint8_t* packet, uint16_t len,
+                      bool assign_seq = true);
+    bool out_endpoint_ready(uint8_t address, uint8_t instance);
+    void prepare_gip_session(uint8_t address, uint8_t instance);
+    void mark_gip_power_sent(uint8_t address, uint8_t instance);
+    void get_endpoint_info(uint8_t address, uint8_t instance, uint8_t* itf_num, uint8_t* ep_in,
+                           uint8_t* ep_out, uint16_t* ep_in_size, uint16_t* ep_out_size);
+    /** Current GIP OUT sequence counter (assigned to next send_gip_out with assign_seq). */
+    uint8_t current_gip_seq(uint8_t address, uint8_t instance);
+    /**
+     * Arm interrupt IN via the shared XInput pipe (exactly one owner).
+     * If already pending, returns true with reason "ALREADY_ARMED".
+     */
+    bool arm_gip_in(uint8_t address, uint8_t instance, const char** reason_out = nullptr);
+
+    /** Host IDENTIFY request: 04 20 <host_seq> 00 (SDL / xone). Uses next GIP OUT sequence. */
+    bool send_gip_identify(uint8_t address, uint8_t instance);
+
+    /**
+     * If inbound options include GIP_OPT_ACK, send GIP ACK (0x01) using the *incoming*
+     * sequence (not the next host sequence). Returns true if an ACK was submitted.
+     * `bytes_received` / `remaining` match xone acknowledge payload fields.
+     */
+    bool send_gip_ack_if_requested(uint8_t address, uint8_t instance, const uint8_t* packet,
+                                   uint16_t len, uint16_t bytes_received, uint16_t remaining);
+
+    /**
+     * Standard USB GET_INTERFACE (sync). Returns true and writes *alt_out on success.
+     * Used by Victrix Gambit to log the active alt before SET_INTERFACE(1,0).
+     */
+    bool get_interface_alt(uint8_t daddr, uint8_t itf_num, uint8_t* alt_out);
+
+    /**
+     * Standard USB SET_INTERFACE — disable GIP/audio companion (Linux xpad/xone).
+     * Async; complete_cb invoked when the control transfer finishes.
+     * Scoped helper for dedicated drivers (e.g. Victrix Gambit); does not open audio EPs.
+     */
+    using set_interface_complete_cb_t = void (*)(uint8_t daddr, bool success, xfer_result_t result,
+                                                 uintptr_t user_data);
+    bool disable_gip_audio_interface(uint8_t daddr, uint8_t itf_num, uint8_t itf_alt,
+                                     set_interface_complete_cb_t complete_cb, uintptr_t user_data);
+
     //Wireless only atm
     void xbox360_chatpad_init(uint8_t address, uint8_t instance); 
     bool xbox360_chatpad_keepalive(uint8_t address, uint8_t instance);
@@ -115,6 +166,12 @@ namespace tuh_xinput
     TU_ATTR_WEAK void mount_cb(uint8_t dev_addr, uint8_t instance, const Interface *interface);
     TU_ATTR_WEAK void unmount_cb(uint8_t dev_addr, uint8_t instance, const Interface *interface);
     TU_ATTR_WEAK void report_sent_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len);
+    /**
+     * OUT interrupt transfer finished (success or fail). Used by VictrixGambit completion-driven init.
+     * `data`/`len` are the last submitted OUT buffer contents when available.
+     */
+    TU_ATTR_WEAK void out_xfer_complete_cb(uint8_t dev_addr, uint8_t instance, bool success,
+                                           uint8_t const* data, uint16_t len);
     TU_ATTR_WEAK void xbox360w_connect_cb(uint8_t dev_addr, uint8_t instance);
     TU_ATTR_WEAK void xbox360w_disconnect_cb(uint8_t dev_addr, uint8_t instance);
     /** Called on every successful XInput IN transfer (keepalive for host idle watchdog). */

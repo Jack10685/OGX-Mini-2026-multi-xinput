@@ -2,7 +2,34 @@
 
 Improvements and fixes applied to the OGX-Mini RP2040 firmware in this project.
 
+**Unreleased / fork changes:**
+- **Xbox 360 / XInput - multiple physical adapters:** Per-device USB and XSM3 identity derived from the Pico unique board ID allows multiple OGX-Mini adapters running the same firmware image to enumerate as independent Xbox 360 controllers. See [§ XInput / Xbox 360 - per-device USB/XSM3 identity](#xinput--xbox-360--per-device-usbxsm3-identity).
+
 **Version:** From **v1.0.0a3** the version was bumped to **v1.0.0a4** to reflect Wii U controller fixes, Gamecube USB mode, PS3 driver fixes, latency improvements, and Xbox 360 (XInput) support (see below). **v1.0.0.8a+** documents **Pico W / Pico 2 W** work on **DualShock 4 (Classic Bluetooth)** vs **BLE advertising**, **BR inquiry**, and related BT stability (see *Pico W / Pico 2 W — DualShock 4 and Classic Bluetooth* below). **v1.0.0.10a** adds **Nintendo Switch 2** wireless support (**Pro 2** and **Joy-Con 2**) over **BLE**, **Switch 1 Joy-Con L+R merge**, and **Joy-Con dual-half latency fixes** (see *Nintendo Switch 2 — Bluetooth* and *Joy-Con pair merge — latency* below). **v1.0.0.11a** adds **PIO USB host wired connection fixes** — **Switch 1/2 Pro**, **DualShock 3**, **Xbox 360 wireless receiver**, and **Razer Atrox Xbox One** (`1532:0a00`) — validated on **Waveshare RP2350-USB-A**, plus **STEAM output mode** for **SteamOS / Bazzite** (see *STEAM mode* below). **v1.0.0.12a** adds **PS3 / PS4 motion passthrough**, **Bluetooth disconnect reboot**, **USB resume → restore BT pairing**, **XInput stock stick feel (#38)**, **Switch HD rumble passthrough**, **Switch 2 anti-deadzone / L3–R3 (#64)**, **RP2354 Bluetooth**, **STEAM touchpad-mouse-only**, **Steam Controller 2026 (Triton) BLE**, and **DualShock 3 USB → Bluetooth auto-pair restore** (sync feature **0xF5** after PIO USB wired init; see sections below).
+
+---
+
+## XInput / Xbox 360 - per-device USB/XSM3 identity
+
+**Goal:** Allow multiple physical OGX-Mini adapters running the same firmware image to connect to one Xbox 360 as independent controllers.
+
+**Problem:** XInput mode used the same static USB serial and XSM3 controller identification serial on every adapter. Two adapters with the same identity could be treated as duplicates by the Xbox 360 instead of being assigned independently.
+
+**Approach:**
+| Item | Detail |
+|------|--------|
+| **Unique source** | Pico unique board ID via `pico_get_unique_board_id()` |
+| **Serial** | 48 bits of the board ID encoded as a 12-character uppercase hexadecimal serial |
+| **USB** | Generated serial exposed as USB `iSerialNumber` |
+| **XSM3** | Same serial replaces the stock 12-byte controller serial in the XSM3 identification packet |
+| **Checksum** | Recalculate the XSM3 identification packet XOR checksum after changing the serial |
+| **Firmware** | Identity is generated at runtime, so the same UF2 can be flashed to every adapter |
+| **VID/PID** | Xbox 360 controller VID/PID remains unchanged |
+| **Scope** | One OGX-Mini still exposes one XInput controller; use one physical adapter per player |
+
+**Tested:** A Raspberry Pi Pico 2 W adapter and an RP2040-ZERO adapter confirmed simultaneously as separate Xbox 360 players with independent in-game input. Four-adapter / USB hub testing pending.
+
+**Files:** `src/USBDevice/DeviceDriver/XInput/XInput.cpp`, `CMakeLists.txt`.
 
 **Version 1.0.0.12a — documented here for release notes:**
 
@@ -198,15 +225,17 @@ sudo evtest   # select the mouse interface; drag touchpad for REL_X / REL_Y
 
 ## PS3 / PS4 output — motion passthrough
 
-**Goal:** In **PS3** and **PS4 (DualShock 4 USB)** output modes, pass **accelerometer** (and **gyro** when available) from modern input controllers into the emulated report so titles that use tilt / gyro respond correctly. **Switch** output mode does **not** pass through motion for now (Pro report IMU bytes stay zero).
+**Goal:** In **PS3** and **PS4 (DualShock 4 USB gadget)** modes, pass **accelerometer** (and **gyro** when available) from modern input controllers into the emulated report so titles that use tilt / gyro respond correctly. **Switch** output mode does **not** pass through motion for now (Pro report IMU bytes stay zero).
+
+**Important — PS4 mode is not licensed PS4 console output:** **PS4 mode is made for motion controls to work on authentication dongles.** It does **not** enable native PS4 output by itself. **PS4 output requires authentication from a licensed dongle**, and that auth is **not supported directly by this firmware**.
 
 **Important — console wiring (PS3/PS4):** OGX-Mini is a **USB gadget** (it emulates a controller to a **host**). It does **not** replace a Brook-style dongle on its own. To play **motion games on a real PlayStation 3 or PlayStation 4**, chain:
 
 ```text
-[Your input pad] → (BT or USB host on OGX-Mini) → OGX-Mini → USB → [USB adapter] → PS3 or PS4
+[Your input pad] → (BT or USB host on OGX-Mini) → OGX-Mini → USB → [licensed auth dongle] → PS3 or PS4
 ```
 
-**Tested adapter:** **[Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** — validated for **PS3** Sixaxis titles with OGX-Mini in **PS3 output mode**. The same Brook adapter also works on **PS4**: set OGX-Mini to **PS4 output mode** (**Start + Left Bumper + D-pad Left**), plug OGX-Mini into the Brook, and connect the Brook to the **PS4** USB port.
+**Tested adapter:** **[Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** — validated for **PS3** Sixaxis titles with OGX-Mini in **PS3 output mode**. The same Brook adapter also works on **PS4**: set OGX-Mini to **PS4 mode** (**Start + Left Bumper + D-pad Left**), plug OGX-Mini into the Brook, and connect the Brook to the **PS4** USB port.
 
 | Item | Detail |
 |------|--------|
@@ -875,7 +904,7 @@ Moved to **[Planned_Additions.md](Planned_Additions.md)** (roadmap lists + Xbox 
 | **STEAM (SteamOS / Bazzite)** | **Start + LB + D-pad Up** (~3 s), web app, or **`-DOGXM_FIXED_DRIVER=STEAM`**. USB **DualSense** (`054c:0ce6`) + **HID mouse**. **DualSense input:** passthrough report + **touchpad → mouse** (BT or wired USB host). **Other pads:** synthesized DualSense report; **no stick-mouse fallback**. See [§ STEAM mode](#steam-mode--steamos--bazzite-linux-desktop). |
 | **Motion (PS3/PS4 out)** | **v1.0.0.12a:** Accel/gyro passthrough into emulated DS3/DS4 from DS4/DS5/Switch Pro/SW2/Wii Remote. Console use needs **Brook Wingman XE 2** (or similar). See [§ motion passthrough](#ps3--ps4-output--motion-passthrough). |
 | **Build** | Interactive scripts `scripts/build.sh` (Linux/macOS) and `scripts/build.ps1` (Windows) for board selection, fixed/default mode (**STEAM**, PS4, Wii, etc.), and Release/Debug; output in `scripts/build/`. See [README](../../../README.md) Build section. |
-| **Bluetooth (Pico W / 2 W / RP2354)** | **DS4 / Classic ACL:** BLE advertising **paused** while Classic pad connected; **BR inquiry stopped** during ACL; **no DS4 virtual mouse**; **6 s PS4 rumble** grace. **Xbox Series (BLE):** no stall disconnect when idle; keepalive 12 s. **v1.0.0.12a:** after last **ready** pad disconnects, restore pairing mode then **watchdog reboot** (~500 ms); **USB resume** + **45 s** idle scan watchdog restore pairing without reboot; **LE Secure Connections** for pads that require it (e.g. Triton); **Steam Controller 2026** HOGP parser. **Switch 2 (BLE):** Pro 2 + Joy-Con 2 L/R — custom GATT parser, rumble keepalive, Home latch, **L+R merge**, **dual-half latency fixes**. **Switch 1 Joy-Con (Classic BT):** L+R merge, IMU off when paired. **General:** `sleep_ms(1)` main loop; lock-free BT pad-in (**2-slot** staging for Joy-Con pairs). **v1.0.0.9a:** ~**1 s connection rumble** at `device_ready` (DS4 delayed start). |
+| **Bluetooth (Pico W / 2 W / RP2354)** | **DS4 / Classic ACL:** BLE advertising **paused** while Classic pad connected; **BR inquiry stopped** during ACL; **no DS4 virtual mouse**; **6 s PS4 rumble** grace. **Xbox Series / SCUF Instinct (BLE):** Just Works HOGP, seeded Report Map on CYW43, no stall disconnect when idle; keepalive 12 s. **v1.0.0.12a:** after last **ready** pad disconnects, restore pairing mode then **watchdog reboot** (~500 ms); **USB resume** + **45 s** idle scan watchdog restore pairing without reboot; **LE Secure Connections** for pads that require it (e.g. Triton); **Steam Controller 2026** HOGP parser. **Switch 2 (BLE):** Pro 2 + Joy-Con 2 L/R — custom GATT parser, rumble keepalive, Home latch, **L+R merge**, **dual-half latency fixes**. **Switch 1 Joy-Con (Classic BT):** L+R merge, IMU off when paired. **General:** `sleep_ms(1)` main loop; lock-free BT pad-in (**2-slot** staging for Joy-Con pairs). **v1.0.0.9a:** ~**1 s connection rumble** at `device_ready` (DS4 delayed start). |
 | **PIO USB host (Pico W)** | **Wired unplug:** Debounced combo of **HCD connect**, **`tuh_mounted` over all device addresses**, and **no `process_report` / setup activity** (~**3 s**) so disconnect registers when D+/D− line state is wrong under PIO; **`tuh_deinit`** + restore GPIO line IRQs + BT release. **v1.0.0.11a (all PIO host boards):** **`pio_usb_host_frame()`** after feedback OUT; wired **Switch Pro / PS3 / 360 receiver / Razer Atrox XBO** connection fixes — see [§ PIO USB host — wired connection fixes](#pio-usb-host--wired-connection-fixes-waveshare-rp2350-usb-a). |
 | **DS3 + Bluetooth** | **USB auto-pair:** After sync **0xF4** + LED, **feature `0xF5`** programs the **DS3** with the adapter’s **BD_ADDR** (`CONFIG_EN_BLUETOOTH`); deferred if BT address not ready. **v1.0.0.12a:** restored after PIO USB wired-init regression (sync SET, no F2 chain). See [§ DualShock 3 — automatic USB programming for Bluetooth pairing](#dualshock-3--automatic-usb-programming-for-bluetooth-pairing). |
 | **Multi-adapter (same console)** | **Known limitation:** Two OGX-Mini units plugged into the **same** console usually collide — identical **VID/PID**, shared USB serial (e.g. XInput `"1.0"`), and on **Xbox 360** the same **XSM3 ID**. Workarounds without firmware changes: **one OGX + one native/other-brand pad**, or a **single multi-port** host (e.g. 360 wireless receiver). Unique per-unit identity is not implemented yet. |

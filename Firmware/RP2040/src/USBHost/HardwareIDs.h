@@ -72,7 +72,7 @@ static const HardwareID DINPUT_IDS[] =
     {0x05AC, 0x022D}, // GameSir G4
     {0x05AC, 0x044D}, // GameSir G4 (alt)
     {0x05AC, 0x061A}, // GameSir T3 2.02
-    {0x3537, 0x1022}, // GameSir G7 Pro
+    // GameSir G7 Pro (3537:1022) → dedicated GameSirG7ProHost (not DInput)
     {0x3537, 0x1004}, // GameSir T4 Kaleid
     {0x3537, 0x1094}, // GameSir Tegenaria Lite
     // 8BitDo multi-mode (from SDL_GameControllerDB, HID fallback)
@@ -441,6 +441,28 @@ static const HardwareID N64_IDS[] =
     {0x1234, 0x0004}, // RetroUSB N64 RetroPort
 };
 
+/** GameSir G7 Pro wired HID (Xbox-order face buttons). Always claimed before DINPUT. */
+static const HardwareID GAMESIR_G7_PRO_IDS[] =
+{
+    {0x3537, 0x1022}, // GameSir G7 Pro
+};
+
+#if defined(CONFIG_OGXM_DEBUG)
+/** Flydigi V1 vendor composite (shared by APEX 4 family). Debug probe only — identify via GET_INFO. */
+static const HardwareID FLYDIGI_APEX4_WUKONG_IDS[] =
+{
+    {0x04B4, 0x2412}, // Flydigi V1 (APEX 4 / Wukong candidate — NOT unique to Wukong)
+};
+
+/** GameSir Cyclone 2 wired PC/XInput identities (VID 0x3537 only with these PIDs). */
+static const HardwareID GAMESIR_CYCLONE2_IDS[] =
+{
+    {0x3537, 0x100B}, // pure XInput
+    {0x3537, 0x1053}, // composite Xbox + keyboard/mouse (some firmware)
+    {0x3537, 0x0575}, // yellow HID/Android — dedicated PASSIVE probe only (no app OUT)
+};
+#endif
+
 struct HostTypeMap
 {
     const HardwareID* ids;
@@ -450,6 +472,12 @@ struct HostTypeMap
 
 static const HostTypeMap HOST_TYPE_MAP[] = 
 {
+    { GAMESIR_G7_PRO_IDS, sizeof(GAMESIR_G7_PRO_IDS) / sizeof(HardwareID), HostDriverType::GAMESIR_G7_PRO },
+#if defined(CONFIG_OGXM_DEBUG)
+    /* Before DINPUT so dedicated probes claim known IDs first. */
+    { FLYDIGI_APEX4_WUKONG_IDS, sizeof(FLYDIGI_APEX4_WUKONG_IDS) / sizeof(HardwareID), HostDriverType::FLYDIGI_APEX4_WUKONG },
+    { GAMESIR_CYCLONE2_IDS, sizeof(GAMESIR_CYCLONE2_IDS) / sizeof(HardwareID), HostDriverType::GAMESIR_CYCLONE2 },
+#endif
     { DINPUT_IDS, sizeof(DINPUT_IDS) / sizeof(HardwareID), HostDriverType::DINPUT },
     { PS4_IDS, sizeof(PS4_IDS) / sizeof(HardwareID), HostDriverType::PS4 },
     { PS5_IDS, sizeof(PS5_IDS) / sizeof(HardwareID), HostDriverType::PS5 },

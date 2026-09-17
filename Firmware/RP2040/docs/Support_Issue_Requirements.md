@@ -13,6 +13,7 @@ Also read the [Support policy](../../../README.md#support-policy) in the main RE
 | Support policy (controllers / boards) | [README — Support policy](../../../README.md#support-policy) |
 | Adding a controller yourself | [Adding_Supported_Controllers.md](Adding_Supported_Controllers.md) |
 | Wired pad lists | [Wired_Controllers.md](Wired_Controllers.md) |
+| Flydigi APEX 4 Wukong (modes / limitations) | [Flydigi_APEX4_Wukong.md](Flydigi_APEX4_Wukong.md) |
 | Full HID report capture (required for mapping) | On-device **Debug UART** — see [Adding supported controllers](Adding_Supported_Controllers.md#step-2--capture-reports-on-the-adapter-required-for-driver-mapping) |
 
 ---
@@ -54,7 +55,7 @@ Fill in **all** of the following. Use the copy-paste template at the bottom.
 
 | Field | Required |
 |-------|----------|
-| **Board** (exact model) | Yes — e.g. Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A. Do not say only “Pico” if it is a W / 2 W / Zero / clone. |
+| **Board** (exact model) | Yes — e.g. Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A, OGX Live. Do not say only “Pico” if it is a W / 2 W / Zero / clone. |
 | **Board revision / seller** | If not an official Pi / Adafruit / Waveshare unit, say so (clones are unsupported). |
 | **How the controller connects** | Wired USB host port / Bluetooth / other |
 | **Host / console** | PC OS, Xbox, Switch, PS3, Steam Deck, etc. |

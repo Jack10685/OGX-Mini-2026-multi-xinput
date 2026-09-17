@@ -11,6 +11,7 @@
 #include "Board/Config.h"
 #include "Board/board_api.h"
 #include "Board/ogxm_log.h"
+#include "Input/InputSlot.h"
 #if defined(CONFIG_EN_USB_HOST)
 #include "pio_usb.h"
 #endif
@@ -39,6 +40,12 @@
 #include "USBHost/HostDriver/XInput/XboxOG.h"
 #include "USBHost/HostDriver/N64/N64.h"
 #include "USBHost/HostDriver/HIDGeneric/HIDGeneric.h"
+#include "USBHost/HostDriver/VictrixGambit/VictrixGambit.h"
+#include "USBHost/HostDriver/GameSirG7Pro/GameSirG7Pro.h"
+#if defined(CONFIG_OGXM_DEBUG)
+#include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4Wukong.h"
+#include "USBHost/HostDriver/GameSirCyclone2/GameSirCyclone2.h"
+#endif
 
 /** Per USB device: TinyUSB HID instance indices and XInput instance indices are separate namespaces
  *  (both often start at 0). Reserve [0 .. MAX_GAMEPADS-1] for HID and [MAX_GAMEPADS ..] for XInput.
@@ -127,7 +134,18 @@ public:
 				const bool xbox360w_sibling =
 					(driver_type == HostDriverType::XBOX360W &&
 					 other.host_driver_type == HostDriverType::XBOX360W);
-				if (complementary || xbox360w_sibling)
+#if defined(CONFIG_OGXM_DEBUG)
+				const bool flydigi_probe_sibling =
+					(driver_type == HostDriverType::FLYDIGI_APEX4_WUKONG &&
+					 other.host_driver_type == HostDriverType::FLYDIGI_APEX4_WUKONG);
+				const bool cyclone2_probe_sibling =
+					(driver_type == HostDriverType::GAMESIR_CYCLONE2 &&
+					 other.host_driver_type == HostDriverType::GAMESIR_CYCLONE2);
+#else
+				const bool flydigi_probe_sibling = false;
+				const bool cyclone2_probe_sibling = false;
+#endif
+				if (complementary || xbox360w_sibling || flydigi_probe_sibling || cyclone2_probe_sibling)
 				{
 					gp_idx = other.gamepad_idx;
 					break;
@@ -146,6 +164,56 @@ public:
 		Interface& interface = device_slot.interfaces[si];
 
 		debug_printf("Attempting to allocate driver for index %d\n", gp_idx);
+#if defined(CONFIG_OGXM_DEBUG)
+		{
+			uint16_t vid = 0, pid = 0;
+			(void)tuh_vid_pid_get(address, &vid, &pid);
+			const char* type_name = "UNKNOWN";
+			switch (driver_type) {
+				case HostDriverType::SWITCH_PRO: type_name = "SWITCH_PRO"; break;
+				case HostDriverType::SWITCH_PRO_2: type_name = "SWITCH_PRO_2"; break;
+				case HostDriverType::SWITCH: type_name = "SWITCH"; break;
+				case HostDriverType::GAMESIR_CYCLONE2: type_name = "GAMESIR_CYCLONE2"; break;
+				case HostDriverType::GAMESIR_G7_PRO: type_name = "GAMESIR_G7_PRO"; break;
+				case HostDriverType::VICTRIX_GAMBIT: type_name = "VICTRIX_GAMBIT"; break;
+				case HostDriverType::XBOX360: type_name = "XBOX360"; break;
+				case HostDriverType::XBOXONE: type_name = "XBOXONE"; break;
+				case HostDriverType::XBOX360W: type_name = "XBOX360W"; break;
+				case HostDriverType::DINPUT: type_name = "DINPUT"; break;
+				case HostDriverType::PS4: type_name = "PS4"; break;
+				case HostDriverType::PS5: type_name = "PS5"; break;
+				case HostDriverType::PS3: type_name = "PS3"; break;
+				case HostDriverType::FLYDIGI_APEX4_WUKONG: type_name = "FLYDIGI_APEX4_WUKONG"; break;
+				case HostDriverType::HID_GENERIC: type_name = "HID_GENERIC"; break;
+				default: break;
+			}
+			debug_printf("[USB DRIVER SELECT] addr=%u instance=%u path=%s VID=%04X PID=%04X type=%s\n",
+			             static_cast<unsigned>(address), static_cast<unsigned>(instance),
+			             dclass == DriverClass::XINPUT ? "XINPUT" : "HID",
+			             vid, pid, type_name);
+			if (driver_type == HostDriverType::SWITCH_PRO &&
+			    GameSirCyclone2Host::is_known_id(vid, pid)) {
+				debug_printf("*** WRONG DRIVER SELECTION *** selected=SWITCH_PRO for Cyclone 2 XInput ID\n");
+			}
+			if (driver_type == HostDriverType::SWITCH_PRO &&
+			    GameSirCyclone2Host::should_claim(vid, pid)) {
+				debug_printf("*** NOTE *** SWITCH_PRO selected but Cyclone should_claim — claim redirect expected\n");
+			}
+			if (driver_type == HostDriverType::GAMESIR_CYCLONE2 && vid == 0x057E && pid == 0x2009) {
+				debug_printf("[CYCLONE2] Switch NS personality claimed by dedicated driver\n");
+			}
+			if (driver_type == HostDriverType::GAMESIR_CYCLONE2 && vid == 0x054C && pid == 0x09CC) {
+				debug_printf("[CYCLONE2] DS4 personality claimed by dedicated driver\n");
+			}
+			if (driver_type == HostDriverType::GAMESIR_CYCLONE2 && vid == 0x3537 && pid == 0x0575) {
+				debug_printf("[CYCLONE2] HID personality claimed — PASSIVE probe (no app OUT)\n");
+			}
+			if (driver_type == HostDriverType::PS4 &&
+			    GameSirCyclone2Host::should_claim(vid, pid)) {
+				debug_printf("*** NOTE *** PS4 selected but Cyclone should_claim — claim redirect expected\n");
+			}
+		}
+#endif
 
 		switch (driver_type)
 		{
@@ -165,6 +233,16 @@ public:
 				debug_printf("DINPUT Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<DInputHost>(gp_idx);
 				break;
+			case HostDriverType::GAMESIR_G7_PRO:
+				/* Skip vendor/config HID (0xFFF0) — only claim Game Pad usage. */
+				if (report_desc && desc_len && !is_hid_gamepad(report_desc, desc_len)) {
+					debug_printf("GAMESIR G7 PRO skip non-gamepad HID iface (desc_len=%u)\n",
+					             static_cast<unsigned>(desc_len));
+					return false;
+				}
+				debug_printf("GAMESIR G7 PRO Loaded\n"); fflush(stdout);
+				interface.driver = std::make_unique<GameSirG7ProHost>(gp_idx);
+				break;
 			case HostDriverType::SWITCH:
 				debug_printf("SWITCH Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<SwitchWiredHost>(gp_idx);
@@ -181,6 +259,16 @@ public:
 				debug_printf("N64 Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<N64Host>(gp_idx);
 				break;
+#if defined(CONFIG_OGXM_DEBUG)
+			case HostDriverType::FLYDIGI_APEX4_WUKONG:
+				debug_printf("FLYDIGI APEX4 WUKONG PROBE Loaded\n"); fflush(stdout);
+				interface.driver = std::make_unique<FlydigiApex4WukongHost>(gp_idx);
+				break;
+			case HostDriverType::GAMESIR_CYCLONE2:
+				debug_printf("GAMESIR CYCLONE 2 Loaded\n"); fflush(stdout);
+				interface.driver = std::make_unique<GameSirCyclone2Host>(gp_idx);
+				break;
+#endif
 			case HostDriverType::PSCLASSIC:
 				debug_printf("PSCLASSIC Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<PSClassicHost>(gp_idx);
@@ -192,6 +280,10 @@ public:
 			case HostDriverType::XBOXONE:
 				debug_printf("XBOXONE Loaded\n"); fflush(stdout);
 				interface.driver = std::make_unique<XboxOneHost>(gp_idx);
+				break;
+			case HostDriverType::VICTRIX_GAMBIT:
+				debug_printf("VICTRIX GAMBIT Loaded\n"); fflush(stdout);
+				interface.driver = std::make_unique<VictrixGambitHost>(gp_idx);
 				break;
 			case HostDriverType::XBOX360:
 				debug_printf("XBOX360 Loaded\n"); fflush(stdout);
@@ -230,9 +322,29 @@ public:
 		interface.gamepad = gamepads_[gp_idx];
 		// Wii U GC adapter: Xbox controllers report positive Y for up; Nintendo use negative
 		const bool xbox_stick_y = (driver_type == HostDriverType::XBOXONE || driver_type == HostDriverType::XBOX360
-			|| driver_type == HostDriverType::XBOX360W || driver_type == HostDriverType::XBOXOG);
+			|| driver_type == HostDriverType::XBOX360W || driver_type == HostDriverType::XBOXOG
+			|| driver_type == HostDriverType::VICTRIX_GAMBIT);
 		interface.gamepad->set_stick_y_positive_is_up(xbox_stick_y);
 		interface.driver->initialize(*interface.gamepad, device_slot.address, instance, report_desc, desc_len);
+
+		{
+			uint16_t bind_vid = 0, bind_pid = 0;
+			(void)tuh_vid_pid_get(address, &bind_vid, &bind_pid);
+			InputSlot::bind_usb(gp_idx, address, instance, interface.host_driver_type, bind_vid, bind_pid,
+			                   "HostManager::setup_driver");
+		}
+
+#if defined(CONFIG_OGXM_DEBUG)
+		/* Passive 360-style 045E:028E may be APEX 4 in PC/XInput mode — log USB tree only; do not claim. */
+		if (driver_type == HostDriverType::XBOX360)
+		{
+			uint16_t vid = 0, pid = 0;
+			if (tuh_vid_pid_get(address, &vid, &pid) && vid == 0x045E && pid == 0x028E)
+			{
+				FlydigiApex4WukongHost::log_xinput_candidate(address, instance);
+			}
+		}
+#endif
 
 		record_usb_host_input_activity();
 		return true;
@@ -298,6 +410,11 @@ public:
 			}
 			if (driver && gamepad)
 			{
+				const uint8_t gp_idx = device_slot.interfaces[si].gamepad_idx;
+				const HostDriverType ht = device_slot.interfaces[si].host_driver_type;
+				InputSlot::log_hid_rx_route(address, instance,
+				                            (len > 0 && report) ? report[0] : 0, len,
+				                            gp_idx, ht);
 				driver->process_report(*gamepad, address, instance, report, len);
 			}
 			break;
@@ -420,7 +537,8 @@ public:
 					tuh_xinput::service_wireless_ports(device_slot.address);
 				}
 				if (iface.driver_class == DriverClass::XINPUT &&
-				    iface.host_driver_type == HostDriverType::XBOXONE)
+				    (iface.host_driver_type == HostDriverType::XBOXONE ||
+				     iface.host_driver_type == HostDriverType::VICTRIX_GAMBIT))
 				{
 					tuh_xinput::service_gip(device_slot.address, iface.usb_instance);
 				}
@@ -509,8 +627,26 @@ public:
 				if (cleared_gamepad_idx < MAX_GAMEPADS)
 				{
 					ps4_composite_next_keepalive_ms_[cleared_gamepad_idx] = 0;
+					InputSlot::clear(cleared_gamepad_idx, "HostManager::deinit_driver");
 				}
 				device_slot.reset();
+			}
+			else if (cleared_gamepad_idx < MAX_GAMEPADS)
+			{
+				/* Shared gamepad across composite interfaces — keep slot if another iface remains. */
+				bool still_owns = false;
+				for (const auto& i : device_slot.interfaces)
+				{
+					if (i.driver && i.gamepad_idx == cleared_gamepad_idx)
+					{
+						still_owns = true;
+						break;
+					}
+				}
+				if (!still_owns)
+				{
+					InputSlot::clear(cleared_gamepad_idx, "HostManager::deinit_driver iface");
+				}
 			}
 			return;
 		}

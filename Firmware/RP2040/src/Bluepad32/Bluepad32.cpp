@@ -23,8 +23,13 @@ static std::atomic<bool> s_bt_any_connected_cached{false};
 #endif
 
 #include "Bluepad32/Bluepad32.h"
+#include "Bluepad32/ClassicPairingDebug.h"
 #include "Board/board_api.h"
 #include "Board/ogxm_log.h"
+#include "Input/InputSlot.h"
+#include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBtProbe.h"
+#include "USBHost/HostDriver/FlydigiApex4Wukong/FlydigiApex4WukongBt.h"
+#include "USBHost/HostDriver/GameSirCyclone2/Cyclone2BtProbe.h"
 #include "parser/uni_hid_parser_ds5.h"
 #include "controller/uni_controller.h"
 #include "parser/uni_hid_parser_wii.h"
@@ -43,6 +48,37 @@ static_assert((CONFIG_BLUEPAD32_MAX_DEVICES >= MAX_GAMEPADS),
               "Bluepad32 must allow at least as many BT devices as USB gamepad slots");
 
 namespace bluepad32 {
+
+#if defined(CONFIG_OGXM_DEBUG)
+static void log_ogx_slots(const char* tag) {
+    printf("\n%s\n", tag ? tag : "[INPUT SLOTS]");
+    for (uint8_t i = 0; i < MAX_GAMEPADS; ++i) {
+        const InputSlot::State st = InputSlot::get(i);
+        if (st.transport == InputTransport::USB) {
+            printf("INPUT SLOT %u\ntransport=USB\ndriver=%s\naddr=%u\ninstance=%u\n",
+                   static_cast<unsigned>(i), InputSlot::driver_name(st.physical_driver),
+                   static_cast<unsigned>(st.usb_addr), static_cast<unsigned>(st.usb_instance));
+        } else {
+            printf("INPUT SLOT %u\ntransport=%s\n", static_cast<unsigned>(i),
+                   InputSlot::transport_name(st.transport));
+        }
+    }
+}
+#endif
+
+/** Prefer a free OGX pad; never reuse a USB-owned pad for Bluetooth output. */
+static int resolve_bt_output_pad_idx(int preferred_idx) {
+    if (preferred_idx >= 0 && preferred_idx < static_cast<int>(MAX_GAMEPADS) &&
+        !InputSlot::usb_owns(static_cast<uint8_t>(preferred_idx))) {
+        return preferred_idx;
+    }
+    for (uint8_t i = 0; i < MAX_GAMEPADS; ++i) {
+        if (!InputSlot::usb_owns(i)) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
 
 static bool bp32_is_switch_joycon(const uni_hid_device_t* d) {
     return d != nullptr && (d->controller_type == CONTROLLER_TYPE_SwitchJoyConLeft ||
@@ -125,6 +161,12 @@ btstack_timer_source_t feedback_timer_;
 btstack_timer_source_t led_timer_;
 bool led_timer_set_{false};
 bool feedback_timer_set_{false};
+
+/** Core0 USB mux may run before Core1 finishes uni_init(); BTstack asserts if
+ *  execute_on_main_thread is used with the_run_loop == NULL (boot loop with pad plugged). */
+static std::atomic<bool> s_btstack_run_loop_ready{false};
+/** Wired USB asked to silence BT before the stack was up — apply after init. */
+static std::atomic<bool> s_bt_quiet_for_usb_pending{false};
 
 static constexpr uint32_t GPIO_PROCESS_INTERVAL_MS = 4;
 static btstack_timer_source_t gpio_process_timer_;
@@ -354,9 +396,11 @@ static void send_feedback_cb(btstack_timer_source *ts)
             }
         }
     }
-
-    btstack_run_loop_set_timer(ts, FEEDBACK_TIME_MS);
-    btstack_run_loop_add_timer(ts);
+    if (feedback_timer_set_)
+	{
+        btstack_run_loop_set_timer(ts, FEEDBACK_TIME_MS);
+        btstack_run_loop_add_timer(ts);
+	}
 }
 
 static void check_led_cb(btstack_timer_source *ts)
@@ -391,8 +435,9 @@ static void init_complete_cb(void) {
     uni_bt_set_gap_min_peridic_length(UNI_BT_MIN_PERIODIC_LENGTH);
 
     uni_bt_enable_new_connections_unsafe(true);
-    // uni_bt_del_keys_unsafe();
+    // uni_bt_del_keys_unsafe();  // use -DOGXM_BT_CLEAR_KEYS_ON_BOOT=1 or ogxm_bt_debug_clear_keys()
     uni_property_dump_all();
+    ogxm_classic_pairing_debug_init();
     OGXM_LOG("BT: stack ready — BR/EDR inquiry + BLE scan (8BitDo: use Switch or Android mode)\n");
 }
 
@@ -405,6 +450,20 @@ static uni_error_t device_discovered_cb(bd_addr_t addr, const char* name, uint16
         return UNI_ERROR_IGNORE_DEVICE;
     }
 
+    /* Cyclone 2 green/"Game Pair Mode" is not a usable direct-BT XInput gamepad. */
+    if (gamesir_cyclone2_bt_should_ignore_discovered(name)) {
+        gamesir_cyclone2_bt_on_discovered(addr, name, cod, rssi);
+        return UNI_ERROR_IGNORE_DEVICE;
+    }
+
+#if defined(CONFIG_OGXM_DEBUG)
+    printf("\n[BT DEVICE FOUND]\naddr=%s\nname=%s\n", bd_addr_to_str(addr),
+           name && name[0] ? name : "(none)");
+    log_ogx_slots("BEFORE (discovery; BT idx != OGX slot)");
+#endif
+    (void)rssi;
+    flydigi_apex4_bt_on_discovered(addr, name, cod, rssi);
+    gamesir_cyclone2_bt_on_discovered(addr, name, cod, rssi);
     return UNI_ERROR_SUCCESS;
 }
 
@@ -412,9 +471,32 @@ static void device_connected_cb(uni_hid_device_t* device) {
     if (device == nullptr) {
         return;
     }
+    /* Safety net if name arrives only after ACL create. */
+    if (gamesir_cyclone2_bt_reject_game_pair_mode_if_needed(device)) {
+        return;
+    }
+    const int bt_idx = uni_hid_device_get_idx_for_instance(device);
+#if defined(CONFIG_OGXM_DEBUG)
+    printf("\n[BT DEVICE CREATE]\nbt_index=%d\nname=%s\n", bt_idx,
+           device->name[0] ? device->name : "(none)");
+    log_ogx_slots("BEFORE create/connect");
+#endif
+    flydigi_apex4_bt_on_connected(device);
+    gamesir_cyclone2_bt_on_connected(device);
     if (uni_hid_parser_switch2_is_ble_device(device)) {
         OGXM_LOG("SW2: connected pid=0x%04x — waiting for encryption/GATT\n", device->product_id);
     }
+#if defined(CONFIG_OGXM_DEBUG)
+    log_ogx_slots("AFTER create/connect (USB slots must be unchanged)");
+    if (bt_idx >= 0 && bt_idx < static_cast<int>(MAX_GAMEPADS) &&
+        InputSlot::usb_owns(static_cast<uint8_t>(bt_idx))) {
+        printf("[BT] NOTE: Bluepad idx=%d overlaps USB-owned OGX slot %d — "
+               "will not write PadIn / reset that slot\n",
+               bt_idx, bt_idx);
+    }
+#else
+    (void)bt_idx;
+#endif
 }
 
 /** CYW43: resume OGX BLE advertising when no Classic (BR/EDR) gamepad remains connected. */
@@ -628,6 +710,8 @@ static void device_disconnected_cb(uni_hid_device_t* device) {
     if (uni_hid_parser_switch2_is_ble_device(device)) {
         OGXM_LOG("SW2: disconnected slot %d\n", idx);
     }
+    flydigi_apex4_bt_on_disconnected(device);
+    gamesir_cyclone2_bt_on_disconnected(device);
 
     const bool was_ready = s_bt_slot_was_ready[idx];
     s_bt_slot_was_ready[idx] = false;
@@ -650,7 +734,21 @@ static void device_disconnected_cb(uni_hid_device_t* device) {
     s_ps4_rumble_ok_ms[idx] = 0;
     prev_touchpad_clicked_[idx] = false;
     pending_adaptive_trigger_send_[idx] = false;
-    bt_devices_[idx].gamepad->reset_pad_in();
+    /* Never clear PadIn for an OGX slot owned by USB (BT idx often equals USB pad 0). */
+    const int out_for_reset = bp32_get_gamepad_output_idx(device);
+    const int pad_for_reset =
+        (out_for_reset >= 0 && out_for_reset < static_cast<int>(MAX_GAMEPADS)) ? out_for_reset
+        : (idx < static_cast<int>(MAX_GAMEPADS) ? idx : -1);
+    if (pad_for_reset >= 0 && !InputSlot::usb_owns(static_cast<uint8_t>(pad_for_reset))) {
+        if (pad_for_reset < CONFIG_BLUEPAD32_MAX_DEVICES &&
+            bt_devices_[pad_for_reset].gamepad != nullptr) {
+            bt_devices_[pad_for_reset].gamepad->reset_pad_in();
+        }
+    } else if (pad_for_reset >= 0) {
+#if defined(CONFIG_OGXM_DEBUG)
+        printf("[BT DISCONNECT] skip reset_pad_in: OGX slot %d owned by USB\n", pad_for_reset);
+#endif
+    }
     SteamPassthrough::clear();
 
     if (feedback_timer_set_ && !any_other_connected) {
@@ -713,14 +811,38 @@ static uni_error_t device_ready_cb(uni_hid_device_t* device) {
     }
 
     const int out_idx = bp32_get_gamepad_output_idx(device);
+    const int pad_idx = resolve_bt_output_pad_idx(out_idx >= 0 ? out_idx : idx);
+    if (pad_idx < 0) {
+#if defined(CONFIG_OGXM_DEBUG)
+        printf("\n[BT READY REJECTED]\nbt_idx=%d preferred_out=%d — no free OGX slot "
+               "(USB occupies all MAX_GAMEPADS=%u)\n",
+               idx, out_idx, static_cast<unsigned>(MAX_GAMEPADS));
+        log_ogx_slots("REJECT reason: USB ownership");
+#endif
+        return UNI_ERROR_NO_SLOTS;
+    }
+#if defined(CONFIG_OGXM_DEBUG)
+    if (pad_idx != idx || pad_idx != out_idx) {
+        printf("[BT READY] bt_idx=%d out_idx=%d -> OGX pad %d (avoid USB collision)\n",
+               idx, out_idx, pad_idx);
+    }
+#endif
+
+    if (gamesir_cyclone2_bt_is_game_pair_mode(device->name)) {
+        gamesir_cyclone2_bt_on_ready(device);
+        gamesir_cyclone2_bt_reject_game_pair_mode_if_needed(device);
+        return UNI_ERROR_INVALID_CONTROLLER;
+    }
 
     bt_devices_[idx].connected = true;
     s_bt_slot_was_ready[idx] = true;
+    flydigi_apex4_bt_on_ready(device);
+    gamesir_cyclone2_bt_on_ready(device);
 #if defined(CONFIG_OGXM_DEBUG)
     if (uni_hid_parser_switch2_is_ble_device(device)) {
-        OGXM_LOG("SW2: READY slot %d pid=0x%04x out=%d — input active\n", idx, device->product_id, out_idx);
+        OGXM_LOG("SW2: READY slot %d pid=0x%04x out=%d — input active\n", idx, device->product_id, pad_idx);
     } else if (bp32_is_switch_joycon(device)) {
-        OGXM_LOG("SW1: READY slot %d Joy-Con out=%d — input active\n", idx, out_idx);
+        OGXM_LOG("SW1: READY slot %d Joy-Con out=%d — input active\n", idx, pad_idx);
     }
 #endif
 #if defined(CONFIG_TARGET_PICO_W) && defined(CONFIG_EN_USB_HOST)
@@ -745,9 +867,7 @@ static uni_error_t device_ready_cb(uni_hid_device_t* device) {
     }
 #endif
     const uint32_t tnow = to_ms_since_boot(get_absolute_time());
-    const int pad_idx = (out_idx >= 0 && out_idx < static_cast<int>(MAX_GAMEPADS))
-                            ? out_idx
-                            : (idx < static_cast<int>(MAX_GAMEPADS) ? idx : 0);
+    /* pad_idx already resolved above to avoid USB-owned OGX slots. */
     s_last_bt_input_ms[pad_idx] = tnow;
     s_bt_disconnect_combo_grace_until_ms[pad_idx] = tnow + 3500u;
     if (device->controller_type == CONTROLLER_TYPE_PS4Controller)
@@ -846,7 +966,8 @@ static void controller_data_cb(uni_hid_device_t* device, uni_controller_t* contr
     int idx = bp32_get_gamepad_output_idx(device);
     if (idx < 0)
         idx = bt_slot;
-    if (idx < 0 || idx >= static_cast<int>(MAX_GAMEPADS))
+    idx = resolve_bt_output_pad_idx(idx);
+    if (idx < 0)
         return;
     {
         const uint32_t now_cb = to_ms_since_boot(get_absolute_time());
@@ -854,6 +975,30 @@ static void controller_data_cb(uni_hid_device_t* device, uni_controller_t* contr
         if (bt_slot >= 0 && bt_slot < CONFIG_BLUEPAD32_MAX_DEVICES && bt_slot != idx)
             s_last_bt_input_ms[static_cast<unsigned>(bt_slot)] = now_cb;
     }
+
+    /* USB-owned OGX pad must not receive Bluetooth PadIn (MAX_GAMEPADS=1 collision). */
+    if (InputSlot::usb_owns(static_cast<uint8_t>(idx))) {
+        return;
+    }
+
+#if defined(CONFIG_OGXM_DEBUG)
+    if (flydigi_apex4_bt_parser_installed(device)) {
+        static uint32_t s_apex_plat_log_ms[MAX_GAMEPADS]{};
+        const uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (idx >= 0 && idx < static_cast<int>(MAX_GAMEPADS) &&
+            (now - s_apex_plat_log_ms[idx] >= 500u ||
+             (uni_gp->buttons | uni_gp->misc_buttons | uni_gp->dpad) != 0)) {
+            if (now - s_apex_plat_log_ms[idx] >= 250u) {
+                s_apex_plat_log_ms[idx] = now;
+                OGXM_LOG("[3] BLUEPAD PLATFORM CALLBACK idx=%d buttons=0x%04x misc=0x%02x "
+                         "Lx=%ld Ly=%ld Rx=%ld Ry=%ld\n",
+                         idx, uni_gp->buttons, uni_gp->misc_buttons,
+                         static_cast<long>(uni_gp->axis_x), static_cast<long>(uni_gp->axis_y),
+                         static_cast<long>(uni_gp->axis_rx), static_cast<long>(uni_gp->axis_ry));
+            }
+        }
+    }
+#endif
 
 #if BLUEPAD32_UART_LOG_INPUT
     {
@@ -1049,6 +1194,20 @@ static void controller_data_cb(uni_hid_device_t* device, uni_controller_t* contr
 
     gamepad->set_pad_in_from_bluetooth(gp_in);
 
+#if defined(CONFIG_OGXM_DEBUG)
+    if (flydigi_apex4_bt_parser_installed(device)) {
+        static uint32_t s_apex_ogx_log_ms[MAX_GAMEPADS]{};
+        const uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (idx >= 0 && idx < static_cast<int>(MAX_GAMEPADS) && now - s_apex_ogx_log_ms[idx] >= 500u) {
+            s_apex_ogx_log_ms[idx] = now;
+            OGXM_LOG("[4] OGX INPUT idx=%d buttons=0x%04x dpad=0x%02x lx=%d ly=%d rx=%d ry=%d\n",
+                     idx, gp_in.buttons, gp_in.dpad,
+                     static_cast<int>(gp_in.joystick_lx), static_cast<int>(gp_in.joystick_ly),
+                     static_cast<int>(gp_in.joystick_rx), static_cast<int>(gp_in.joystick_ry));
+        }
+    }
+#endif
+
 #if BLUEPAD32_UART_LOG_INPUT
     if (idx >= 0 && idx < static_cast<int>(MAX_GAMEPADS) &&
         device->controller_type != CONTROLLER_TYPE_Switch2ProController) {
@@ -1122,12 +1281,18 @@ void set_pico_w_pio_usb_mux_tick(void (*tick_cb)(void)) {
     s_pico_w_pio_usb_mux_tick = tick_cb;
 }
 
+
 void wired_usb_takeover_disconnect_bt() {
 #if defined(CONFIG_TARGET_PICO_W) && defined(CONFIG_EN_USB_HOST)
     /* Core0 mux uses this atomic; disconnect callbacks run async on Core1. Clear immediately so
      * we do not treat BT as active and tuh_deinit() wired USB during the disconnect window. */
     s_bt_any_connected_cached.store(false, std::memory_order_release);
 #endif
+    s_bt_quiet_for_usb_pending.store(true, std::memory_order_release);
+    if (!s_btstack_run_loop_ready.load(std::memory_order_acquire)) {
+        /* Pad plugged during CYW43/uni_init — defer until run loop exists (avoids btstack_assert). */
+        return;
+    }
     for (uint8_t i = 0; i < CONFIG_BLUEPAD32_MAX_DEVICES; ++i) {
         uni_bt_disconnect_device_safe(i);
     }
@@ -1135,6 +1300,10 @@ void wired_usb_takeover_disconnect_bt() {
 }
 
 void wired_usb_release_enable_bt_pairing() {
+    s_bt_quiet_for_usb_pending.store(false, std::memory_order_release);
+    if (!s_btstack_run_loop_ready.load(std::memory_order_acquire)) {
+        return;
+    }
 #if defined(CONFIG_EN_BLUETOOTH) && defined(CONFIG_TARGET_PICO_W)
     s_usb_resume_bt_reg.callback = usb_resume_on_bt_main;
     s_usb_resume_bt_reg.context = nullptr;
@@ -1145,6 +1314,9 @@ void wired_usb_release_enable_bt_pairing() {
 }
 
 void on_usb_device_resume() {
+    if (!s_btstack_run_loop_ready.load(std::memory_order_acquire)) {
+        return;
+    }
 #if defined(CONFIG_EN_BLUETOOTH) && defined(CONFIG_TARGET_PICO_W)
     s_usb_resume_bt_reg.callback = usb_resume_on_bt_main;
     s_usb_resume_bt_reg.context = nullptr;
@@ -1193,6 +1365,15 @@ void init(Gamepad(&gamepads)[MAX_GAMEPADS])
 void run_task(Gamepad(&gamepads)[MAX_GAMEPADS])
 {
     init(gamepads);
+    /* uni_init has installed the run loop — safe for Core0 USB mux BT calls. */
+    s_btstack_run_loop_ready.store(true, std::memory_order_release);
+    if (s_bt_quiet_for_usb_pending.load(std::memory_order_acquire)) {
+        for (uint8_t i = 0; i < CONFIG_BLUEPAD32_MAX_DEVICES; ++i) {
+            uni_bt_disconnect_device_safe(i);
+        }
+        uni_bt_enable_new_connections_safe(false);
+        OGXM_LOG("BT: applied deferred USB quiet (pad was plugged during BT bring-up)\n");
+    }
     btstack_run_loop_execute();
 }
 

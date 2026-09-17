@@ -23,6 +23,14 @@ public:
 
     static bool is_switch2_usb_family(uint16_t vid, uint16_t pid);
 
+    /**
+     * MinimalReportMode: USB handshake → device-info → SET_MODE 0x30 → wait for
+     * real 0x21 / usable 0x30. Skips LED/IMU/SPI. No READY-by-timeout.
+     * Call before initialize() (Cyclone Switch path).
+     */
+    enum class InitProfile : uint8_t { Full = 0, MinimalReportMode };
+    void set_init_profile(InitProfile profile) { init_profile_ = profile; }
+
 protected:
     enum class InitState
     {
@@ -35,15 +43,19 @@ protected:
         LED_HOME,
         FULL_REPORT,
         IMU,
+        /** Minimal: waiting for SET_MODE 0x21 then first 0x30. */
+        AWAIT_FULL_REPORT,
         DONE
     };
 
+    InitProfile init_profile_{InitProfile::Full};
     InitState init_state_{InitState::USB_MAC};
     uint8_t sequence_counter_{0};
     uint8_t pending_usb_ack_{0};
     uint8_t pending_subcmd_ack_{0};
     uint8_t init_step_retries_{0};
     bool usb_timeout_sent_{false};
+    bool set_mode_acked_{false};
 
     SwitchPro::InReport prev_in_report_{};
     uint8_t prev_imu_[12]{};
@@ -89,8 +101,11 @@ protected:
     void advance_after_usb_ack(Gamepad& gamepad, uint8_t address, uint8_t instance);
     void send_usb_disable_timeout_and_probe(uint8_t address, uint8_t instance);
     void send_usb_disable_timeout(uint8_t address, uint8_t instance);
+    bool send_subcmd_report(uint8_t address, uint8_t instance, uint8_t subcmd,
+                            const uint8_t* args, uint8_t args_len);
     void fill_neutral_rumble(SwitchPro::OutReport& out);
     uint8_t get_output_sequence_counter();
+    void apply_standard_input(Gamepad& gamepad, const uint8_t* report, uint16_t len);
 
     static inline int16_t normalize_axis(uint16_t value)
     {

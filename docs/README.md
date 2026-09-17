@@ -5,6 +5,7 @@ These documents are **informational / planning** surveys. For day-to-day use (mo
 | Document | Category | Description |
 |----------|----------|-------------|
 | [Input_Controllers_Research.md](Input_Controllers_Research.md) | Research | Current USB/BT input support and candidates to add |
+| [Flydigi APEX 4 Wukong (user reference)](../Firmware/RP2040/docs/Flydigi_APEX4_Wukong.md) | Reference | Tested wired + Bluetooth modes / limitations for APEX 4 Wukong |
 | [Wired_Retro_Controllers.md](Wired_Retro_Controllers.md) | Research | Wired retro controllers (GPIO/USB) — supported and possible |
 | [Other_Projects_Output_Modes.md](Other_Projects_Output_Modes.md) | Planning | Output modes in BlueRetro and similar projects not yet in OGX-Mini |
 | [Planned_Additions.md](../Firmware/RP2040/docs/Planned_Additions.md) | Roadmap | Planned features (original + fork) and researched projects |
