@@ -72,3 +72,13 @@ void tud_resume_cb(void) {
 	bluepad32::on_usb_device_resume();
 }
 #endif
+
+void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
+{
+	DeviceManager::get_instance().get_driver()->line_state_cb(itf, dtr, rts);
+}
+
+void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding)
+{
+	DeviceManager::get_instance().get_driver()->line_coding_cb(itf, p_line_coding);
+}
