@@ -396,9 +396,11 @@ static void send_feedback_cb(btstack_timer_source *ts)
             }
         }
     }
-
-    btstack_run_loop_set_timer(ts, FEEDBACK_TIME_MS);
-    btstack_run_loop_add_timer(ts);
+    if (feedback_timer_set_)
+	{
+        btstack_run_loop_set_timer(ts, FEEDBACK_TIME_MS);
+        btstack_run_loop_add_timer(ts);
+	}
 }
 
 static void check_led_cb(btstack_timer_source *ts)
