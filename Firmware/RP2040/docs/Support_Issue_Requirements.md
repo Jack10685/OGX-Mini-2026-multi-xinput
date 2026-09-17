@@ -55,7 +55,7 @@ Fill in **all** of the following. Use the copy-paste template at the bottom.
 
 | Field | Required |
 |-------|----------|
-| **Board** (exact model) | Yes — e.g. Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A. Do not say only “Pico” if it is a W / 2 W / Zero / clone. |
+| **Board** (exact model) | Yes — e.g. Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A, OGX Live. Do not say only “Pico” if it is a W / 2 W / Zero / clone. |
 | **Board revision / seller** | If not an official Pi / Adafruit / Waveshare unit, say so (clones are unsupported). |
 | **How the controller connects** | Wired USB host port / Bluetooth / other |
 | **Host / console** | PC OS, Xbox, Switch, PS3, Steam Deck, etc. |

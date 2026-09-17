@@ -26,7 +26,7 @@ How to use specific output modes and related setup.
 | Document | Description |
 |----------|-------------|
 | [SteamOS_Bazzite_Output_Mode.md](SteamOS_Bazzite_Output_Mode.md) | **STEAM** mode: DualSense USB + touchpad → HID mouse (SteamOS / Bazzite / Linux desktop). |
-| [PS3_PS4_Motion_Controls.md](PS3_PS4_Motion_Controls.md) | PS3 / PS4 Sixaxis / tilt passthrough, supported inputs, Brook adapter notes. |
+| [PS3_PS4_Motion_Controls.md](PS3_PS4_Motion_Controls.md) | PS3 / PS4 motion for auth dongles; **PS4 mode ≠ licensed PS4 console output**. |
 | [Wii_Mode_Guide.md](Wii_Mode_Guide.md) | Wii (Wiimote) output — build-option only: extensions, sync, mapping. |
 | [PICO2W_WII_USB_SETUP.md](PICO2W_WII_USB_SETUP.md) | Pico W / Pico 2 W USB host wiring (PIO USB) for Wii mode. |
 | [GPIO_Output_Pinout_and_Mappings.md](GPIO_Output_Pinout_and_Mappings.md) | GPIO pin-outs and mappings: PS1/PS2, Dreamcast, GameCube, N64. |

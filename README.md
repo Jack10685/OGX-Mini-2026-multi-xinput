@@ -26,6 +26,7 @@ I can only **test and maintain** these boards:
 - Raspberry Pi **Pico W**
 - Raspberry Pi **Pico 2 W**
 - Waveshare **RP2350-USB-A**
+- **OGX Live**
 
 I cannot purchase and validate every board variant this repo builds for. For other boards (including RP2040-Zero, RP2350-Zero, XIAO, RP2354, ESP32 hybrids, 4-channel setups, and clones): **fork or clone this repository**, develop and test your patches on your hardware, and **open a pull request** so fixes can be merged here for everyone. Maintainer-led work on an additional board still requires a **GitHub issue** plus a **donation earmarked for that board** (or shipped hardware under a prior agreement).
 
@@ -64,7 +65,7 @@ Unofficial clones, random AliExpress spin-offs, or homebrew PCBs that only “lo
 - Playstation Classic
 - DInput
 - **SteamOS / Bazzite** — Linux desktop / Steam Deck (desktop mode): **DualSense** USB gamepad + **touchpad → HID mouse** (see [SteamOS / Bazzite output mode](Firmware/RP2040/docs/SteamOS_Bazzite_Output_Mode.md))
-- **PS3 / PS4 motion** — Sixaxis / accelerometer passthrough from DS4, DualSense, Switch Pro, and Wii Remote (see [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md))
+- **PS3 / PS4 motion** — Sixaxis / accelerometer passthrough from DS4, DualSense, Switch Pro, and Wii Remote for use with **authentication dongles** (e.g. Brook). **PS4 mode is not native PS4 console output** — licensed PS4 auth is not supported by this firmware (see [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md))
 - Wii U (GameCube Adapter) — **only output mode tested and supported for multi-controller builds** (`MAX_GAMEPADS` > 1; see [Multi-controller builds](#multi-controller-builds-max_gamepads--1))
 - **Wii (Wiimote)** — Pico W / Pico 2 W only; build with `-DOGXM_FIXED_DRIVER=WII`. See [Wii Mode Guide](Firmware/RP2040/docs/Wii_Mode_Guide.md).
 - **PlayStation 1 & 2** — GPIO output to a console controller cable. **Intended use:** **Pico W** or **Pico 2 W** + Bluetooth pad, wired to a PS1/PS2 controller cable plugged into the console (wireless adapter). **USB-A / wired USB host input on those boards does not work in these builds and is out of scope.** See [GPIO pinouts](Firmware/RP2040/docs/GPIO_Output_Pinout_and_Mappings.md).
@@ -74,7 +75,7 @@ Unofficial clones, random AliExpress spin-offs, or homebrew PCBs that only “lo
 
 ![Supported platforms](images/platform-list.png "Supported platforms")
 
-**RP2040 output modes:** **USB device:** XInput (Xbox 360 + XSM3), DInput, PS3, **PS4 (DualShock 4 USB)**, **STEAM (SteamOS / Bazzite — DualSense + touchpad mouse)**, **Switch Pro** (Nintendo Switch Pro Controller emulation), Wii U, **Wii (Wiimote, build-option only)**, Xbox OG (Gamepad / Steel Battalion / XRemote), PS Classic, Web App. **GPIO (no USB device):** PS1/PS2, Dreamcast, GameCube, N64 — intended for **Pico W / Pico 2 W** as a wireless bridge (**Bluetooth in** → GPIO out on a hacked controller cable). **USB-A / wired USB host input on those boards is unsupported for these modes.** **Wii, GameCube, and N64 are not in the combo list** — use a dedicated build for those modes (see below).
+**RP2040 output modes:** **USB device:** XInput (Xbox 360 + XSM3), DInput, PS3, **PS4 (DualShock 4 USB gadget for motion on auth dongles — not licensed PS4 console output)**, **STEAM (SteamOS / Bazzite — DualSense + touchpad mouse)**, **Switch Pro** (Nintendo Switch Pro Controller emulation), Wii U, **Wii (Wiimote, build-option only)**, Xbox OG (Gamepad / Steel Battalion / XRemote), PS Classic, Web App. **GPIO (no USB device):** PS1/PS2, Dreamcast, GameCube, N64 — intended for **Pico W / Pico 2 W** as a wireless bridge (**Bluetooth in** → GPIO out on a hacked controller cable). **USB-A / wired USB host input on those boards is unsupported for these modes.** **Wii, GameCube, and N64 are not in the combo list** — use a dedicated build for those modes (see below).
 
 ## Changing platforms
 By default the OGX-Mini will emulate an OG Xbox controller, you must hold a button combo for 3 seconds to change which platform you want to play on. Your chosen mode will persist after powering off the device. 
@@ -93,8 +94,9 @@ Start = Plus (Switch) = Options (Dualsense/DS4)
     - Start + Dpad Down
 - PlayStation 3
     - Start + Dpad Left
-- PlayStation 4 (DualShock 4 USB)
+- PlayStation 4 motion (DualShock 4 USB gadget for auth dongles — **not** licensed PS4 console output)
     - Start + Left Bumper + D-pad **Left**
+    - Made so **motion controls** work through an **authentication dongle** (e.g. Brook Wingman). This firmware does **not** perform PS4 authentication; plug OGX into a licensed dongle, then the dongle into the PS4.
 - SteamOS / Bazzite (DualSense USB + touchpad mouse)
     - Start + Left Bumper + D-pad **Up**
 - PlayStation Classic
@@ -239,13 +241,13 @@ Highlights:
 
 - **Two adapters on one console** — **Not supported yet** as two independent players: units share the same USB identity (VID/PID / serial / XSM3 on 360). Use **one OGX + a native or other-brand pad**, or a **multi-port** host. See [IMPROVEMENTS — Summary](Firmware/RP2040/docs/IMPROVEMENTS.md#summary).
 
-- **PS3 / PS4 motion (tilt / IMU passthrough)** — **PS3** and **PS4** output modes forward accelerometer (and gyro where available) from **DualShock 4**, **DualSense**, **Switch Pro**, and **Wii Remote** (BT/USB where supported). **Switch** output does not pass through motion for now. For **real PS3/PS4 consoles**, use a **USB adapter** between OGX-Mini and the console — **tested with [Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** (works on **PS3** and **PS4**). Details: [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [IMPROVEMENTS.md — motion passthrough](Firmware/RP2040/docs/IMPROVEMENTS.md#ps3--ps4-output--motion-passthrough).
+- **PS3 / PS4 motion (tilt / IMU passthrough)** — **PS3** and **PS4** modes forward accelerometer (and gyro where available) from **DualShock 4**, **DualSense**, **Switch Pro**, and **Wii Remote** (BT/USB where supported). **PS4 mode is for motion on authentication dongles** (DualShock 4 USB gadget profile); it is **not** native/licensed PS4 console output — PS4 auth is **not supported directly** by this firmware. **Switch** output does not pass through motion for now. For **real PS3/PS4 consoles**, use a **licensed USB authentication dongle** between OGX-Mini and the console — **tested with [Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** (works on **PS3** and **PS4**). Details: [PS3 / PS4 motion controls](Firmware/RP2040/docs/PS3_PS4_Motion_Controls.md), [IMPROVEMENTS.md — motion passthrough](Firmware/RP2040/docs/IMPROVEMENTS.md#ps3--ps4-output--motion-passthrough).
 
 - **SteamOS / Bazzite (STEAM output mode)** — **Start + Left Bumper + D-pad Up** (~3 s), **web app**, or `-DOGXM_FIXED_DRIVER=STEAM` / build-script fixed mode. USB enumerates as **Sony DualSense** (`054c:0ce6`) **plus** a separate **HID mouse** interface. **DualSense emulation:** passthrough of the real PS5 report when input is DualSense (BT or wired USB); other controllers get a **synthesized** DualSense report (Cross/Circle/Square/Triangle, L1/R2, Share/Options, PS). **Touchpad → mouse:** DualSense touchpad drag moves the desktop cursor; tap = left click. Controllers without a touchpad are gamepad-only. Works with **Bluetooth** (Pico W / Pico 2 W) or **wired USB** input. Details: [SteamOS / Bazzite output mode](Firmware/RP2040/docs/SteamOS_Bazzite_Output_Mode.md), [IMPROVEMENTS.md — STEAM mode](Firmware/RP2040/docs/IMPROVEMENTS.md#steam-mode--steamos--bazzite-linux-desktop), [Controller_Mappings.md — STEAM](Firmware/RP2040/docs/Controller_Mappings.md#steamos--bazzite-steam-mode).
 
 - **Pico W / Pico 2 W — PIO USB wired unplug:** When you unplug the gamepad from the adapter’s USB host port, the firmware now **detects disconnect reliably** even though PIO USB owns D+/D− (GPIO line state often never shows a true “disconnected” idle). Detection uses **debounced** hints: **HCD port connect status**, **no TinyUSB configured device** (all `tuh_mounted` addresses), and **no host input reports** for a few seconds — so the TinyUSB/PIO host can **tear down**, **GPIO line IRQ monitoring** can resume, and **Bluetooth pairing** can work again without power-cycling or “shorting” the port. Details: [IMPROVEMENTS.md — Pico W PIO USB unplug](Firmware/RP2040/docs/IMPROVEMENTS.md#pico-w--pico-2-w--pio-usb-wired-controller-unplug-detection).
 
-*Note: Maintainer testing is on Feather / Pico W / Pico 2 W / Waveshare RP2350-USB-A. Other boards may not have been tested for every change — community PRs welcome.*
+*Note: Maintainer testing is on Feather / Pico W / Pico 2 W / Waveshare RP2350-USB-A / **OGX Live**. Other boards may not have been tested for every change — community PRs welcome.*
 
 ## Planned additions
 
@@ -276,7 +278,7 @@ Prerequisites: **git**, **Python 3**, **CMake** (≥ 3.13), **Ninja**, **arm-non
 
 #### Board options (OGXM_BOARD)
 
-**Maintainer-tested boards:** Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A — see [Support policy](#support-policy). Other `OGXM_BOARD` values remain buildable for community use; please **clone, fix, and open a pull request** for those targets rather than expecting untested maintainer fixes. Clones and knock-offs are not supported.
+**Maintainer-tested boards:** Adafruit Feather USB Host, Pico W, Pico 2 W, Waveshare RP2350-USB-A, **OGX Live** — see [Support policy](#support-policy). Other `OGXM_BOARD` values remain buildable for community use; please **clone, fix, and open a pull request** for those targets rather than expecting untested maintainer fixes. Clones and knock-offs are not supported.
 
 Use one of these values for **`OGXM_BOARD`** in a manual build, or pick the same board from the build script’s numbered list:
 

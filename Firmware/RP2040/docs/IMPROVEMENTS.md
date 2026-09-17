@@ -198,15 +198,17 @@ sudo evtest   # select the mouse interface; drag touchpad for REL_X / REL_Y
 
 ## PS3 / PS4 output — motion passthrough
 
-**Goal:** In **PS3** and **PS4 (DualShock 4 USB)** output modes, pass **accelerometer** (and **gyro** when available) from modern input controllers into the emulated report so titles that use tilt / gyro respond correctly. **Switch** output mode does **not** pass through motion for now (Pro report IMU bytes stay zero).
+**Goal:** In **PS3** and **PS4 (DualShock 4 USB gadget)** modes, pass **accelerometer** (and **gyro** when available) from modern input controllers into the emulated report so titles that use tilt / gyro respond correctly. **Switch** output mode does **not** pass through motion for now (Pro report IMU bytes stay zero).
+
+**Important — PS4 mode is not licensed PS4 console output:** **PS4 mode is made for motion controls to work on authentication dongles.** It does **not** enable native PS4 output by itself. **PS4 output requires authentication from a licensed dongle**, and that auth is **not supported directly by this firmware**.
 
 **Important — console wiring (PS3/PS4):** OGX-Mini is a **USB gadget** (it emulates a controller to a **host**). It does **not** replace a Brook-style dongle on its own. To play **motion games on a real PlayStation 3 or PlayStation 4**, chain:
 
 ```text
-[Your input pad] → (BT or USB host on OGX-Mini) → OGX-Mini → USB → [USB adapter] → PS3 or PS4
+[Your input pad] → (BT or USB host on OGX-Mini) → OGX-Mini → USB → [licensed auth dongle] → PS3 or PS4
 ```
 
-**Tested adapter:** **[Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** — validated for **PS3** Sixaxis titles with OGX-Mini in **PS3 output mode**. The same Brook adapter also works on **PS4**: set OGX-Mini to **PS4 output mode** (**Start + Left Bumper + D-pad Left**), plug OGX-Mini into the Brook, and connect the Brook to the **PS4** USB port.
+**Tested adapter:** **[Brook Wingman XE 2 Converter](https://www.brookaccessories.com/products/wingman-xe2)** — validated for **PS3** Sixaxis titles with OGX-Mini in **PS3 output mode**. The same Brook adapter also works on **PS4**: set OGX-Mini to **PS4 mode** (**Start + Left Bumper + D-pad Left**), plug OGX-Mini into the Brook, and connect the Brook to the **PS4** USB port.
 
 | Item | Detail |
 |------|--------|

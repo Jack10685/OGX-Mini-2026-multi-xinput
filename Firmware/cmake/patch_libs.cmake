@@ -39,22 +39,56 @@ function(apply_lib_patches EXTERNAL_DIR)
 
     # BTstack v1.8 queues the HID Control Point command through the GATT query
     # scheduler even though the operation is a write without response. This can
-    # leave Xbox BLE controllers connected but unable to complete initialization.
+    # leave Xbox BLE controllers connected but unable to complete initialization
+    # (HID up, GETs return COMMAND_DISALLOWED / no input).
+    # Detect by content — never treat a failed git apply as "already applied"
+    # (hunk line drift caused that false positive and left Xbox BLE broken).
     set(BTSTACK_HIDS_CONTROL_POINT_PATCH "${EXTERNAL_DIR}/patches/btstack_hids_control_point.diff")
-    message(STATUS "Applying BTStack HIDS Control Point patch: ${BTSTACK_HIDS_CONTROL_POINT_PATCH}")
-    execute_process(
-        COMMAND git apply --ignore-whitespace ${BTSTACK_HIDS_CONTROL_POINT_PATCH}
-        WORKING_DIRECTORY ${BTSTACK_PATH}
-        RESULT_VARIABLE BTSTACK_HIDS_CONTROL_POINT_RESULT
-        OUTPUT_VARIABLE BTSTACK_HIDS_CONTROL_POINT_OUTPUT
-        ERROR_VARIABLE BTSTACK_HIDS_CONTROL_POINT_ERROR
-    )
-    if (BTSTACK_HIDS_CONTROL_POINT_RESULT EQUAL 0)
-        message(STATUS "BTStack HIDS Control Point patch applied successfully.")
-    elseif (BTSTACK_HIDS_CONTROL_POINT_ERROR MATCHES "patch does not apply")
+    set(BTSTACK_HIDS_HOST_C "${BTSTACK_PATH}/src/ble/gatt-service/hids_host.c")
+    file(READ "${BTSTACK_HIDS_HOST_C}" _hids_host_c_contents)
+    set(_hids_cp_bug
+"    client->handle = client->services[client->service_index].control_point_value_handle;
+    client->value = value;
+
+    client->state = HIDS_HOST_W2_WRITE_VALUE_OF_CHARACTERISTIC_WITHOUT_RESPONSE;
+    hids_host_request_to_send_next_query(client);")
+    set(_hids_cp_fix
+"    client->handle = client->services[client->service_index].control_point_value_handle;
+    client->value = value;
+
+    client->state = HIDS_HOST_W2_WRITE_VALUE_OF_CHARACTERISTIC_WITHOUT_RESPONSE;
+    hids_host_request_to_send_write_without_response(client);")
+    string(FIND "${_hids_host_c_contents}" "${_hids_cp_fix}" _hids_cp_fixed)
+    string(FIND "${_hids_host_c_contents}" "${_hids_cp_bug}" _hids_cp_buggy)
+    if (_hids_cp_fixed GREATER_EQUAL 0)
         message(STATUS "BTStack HIDS Control Point patch already applied.")
+    elseif (_hids_cp_buggy GREATER_EQUAL 0)
+        message(STATUS "Applying BTStack HIDS Control Point patch (in-place fix)")
+        string(REPLACE "${_hids_cp_bug}" "${_hids_cp_fix}" _hids_host_c_contents "${_hids_host_c_contents}")
+        file(WRITE "${BTSTACK_HIDS_HOST_C}" "${_hids_host_c_contents}")
+        message(STATUS "BTStack HIDS Control Point patch applied successfully.")
     else ()
-        message(FATAL_ERROR "Failed to apply BTStack HIDS Control Point patch: ${BTSTACK_HIDS_CONTROL_POINT_ERROR}")
+        message(STATUS "Applying BTStack HIDS Control Point patch: ${BTSTACK_HIDS_CONTROL_POINT_PATCH}")
+        execute_process(
+            COMMAND git apply --ignore-whitespace ${BTSTACK_HIDS_CONTROL_POINT_PATCH}
+            WORKING_DIRECTORY ${BTSTACK_PATH}
+            RESULT_VARIABLE BTSTACK_HIDS_CONTROL_POINT_RESULT
+            ERROR_VARIABLE BTSTACK_HIDS_CONTROL_POINT_ERROR
+        )
+        if (NOT BTSTACK_HIDS_CONTROL_POINT_RESULT EQUAL 0)
+            execute_process(
+                COMMAND patch -p1 --forward --batch
+                WORKING_DIRECTORY ${BTSTACK_PATH}
+                INPUT_FILE ${BTSTACK_HIDS_CONTROL_POINT_PATCH}
+                RESULT_VARIABLE BTSTACK_HIDS_CONTROL_POINT_RESULT
+                ERROR_VARIABLE BTSTACK_HIDS_CONTROL_POINT_ERROR
+            )
+        endif ()
+        if (BTSTACK_HIDS_CONTROL_POINT_RESULT EQUAL 0)
+            message(STATUS "BTStack HIDS Control Point patch applied successfully.")
+        else ()
+            message(FATAL_ERROR "Failed to apply BTStack HIDS Control Point patch: ${BTSTACK_HIDS_CONTROL_POINT_ERROR}")
+        endif ()
     endif ()
 
     set(BLUEPAD32_PATCH "${EXTERNAL_DIR}/patches/bluepad32_uni.diff")

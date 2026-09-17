@@ -40,7 +40,7 @@ FIXED_DRIVERS=(
   "DREAMCAST:Dreamcast (GPIO)"
   "N64:Nintendo 64 (GPIO)"
   "DINPUT:DInput"
-  "PS4:PlayStation 4 (DualShock 4 USB)"
+  "PS4:PS4 motion (DS4 gadget for auth dongles — not licensed PS4 output)"
   "STEAM:SteamOS / Bazzite (DualSense + touchpad mouse)"
   "PSCLASSIC:PlayStation Classic"
   "WEBAPP:Web App"
