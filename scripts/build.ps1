@@ -1,7 +1,7 @@
 # OGX-Mini 2026 firmware build script (Windows PowerShell)
 # Run from anywhere. Creates scripts\build\ and runs CMake/Ninja there; source is Firmware/RP2040. Optional log in scripts\ on failure.
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 $FirmwareRp2040 = Join-Path $RepoRoot "Firmware\RP2040"
@@ -20,7 +20,7 @@ $Boards = @(
     @{ Id = "RP2350_ZERO";  Desc = "Waveshare RP2350-Zero" },
     @{ Id = "RP2350_USB_A"; Desc = "Waveshare RP2350-USB-A" },
     @{ Id = "RP2040_XIAO";  Desc = "Seeed Studio XIAO RP2040" },
-    @{ Id = "RP2354";       Desc = "RP2354 (RP2350 + Pi Radio Module 2 — BT + PIO USB host GP0/GP1)" },
+    @{ Id = "RP2354";       Desc = "RP2354 (RP2350 + Pi Radio Module 2 - BT + PIO USB host GP0/GP1)" },
     @{ Id = "ADAFRUIT_FEATHER"; Desc = "Adafruit Feather USB Host" },
     @{ Id = "EXTERNAL_4CH_I2C";  Desc = "External 4CH I2C" },
     @{ Id = "ESP32_BLUEPAD32_I2C";  Desc = "ESP32 Bluepad32 I2C" },
@@ -163,7 +163,7 @@ if ($buildSuccess) {
     Write-Host "Build completed successfully. Output is in: $BuildDir" -ForegroundColor Green
     if ($CMAKE_BUILD_TYPE -eq "Debug") {
         Write-Host ""
-        Write-Host "Debug logging (OGXM_LOG, Switch 2 raw HID): UART only at 115200 8N1 — not the Pico USB cable." -ForegroundColor Yellow
+        Write-Host "Debug logging (OGXM_LOG, Switch 2 raw HID): UART only at 115200 8N1 - not the Pico USB cable." -ForegroundColor Yellow
         if ($OGXM_BOARD -eq "PI_PICOW" -or $OGXM_BOARD -eq "PI_PICO2W") {
             Write-Host "  Wire USB-serial RX to GP4 (board TX), GND to GND."
         } else {
