@@ -201,7 +201,9 @@ Unless noted, **D-pad** and **sticks** map directly. **Triggers** map to analog 
 
 ---
 
-### PlayStation 4 (DualShock 4 USB)
+### PlayStation 4 motion (DualShock 4 USB gadget)
+
+**Purpose:** Motion controls through an **authentication dongle** (e.g. Brook). This mode does **not** provide licensed PS4 console output by itself — PS4 authentication is **not supported directly** by this firmware. See [PS3 / PS4 motion controls](PS3_PS4_Motion_Controls.md).
 
 | PadIn | DS4 |
 |-------|-----|
